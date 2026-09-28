@@ -1,2 +1,153 @@
 # G10-LATAM--Equipo-45
 Sistema inteligente de adaptación y generación de contenido educativo con RAG y Gemini — Hackathon ONE G10-LATAM.
+# NuevaMente
+
+Sistema inteligente que ingiere documentación técnica (PDF, Markdown o texto) y la transforma automáticamente en contenido educativo personalizado, usando RAG (Retrieval-Augmented Generation) para anclar el contenido en las fuentes originales y evitar alucinaciones.
+
+Construido para el Hackathon ONE G10-LATAM (Oracle Next Education & Alura).
+
+## Qué resuelve
+
+Adaptar documentación técnica densa a distintos públicos —desde alguien en transición de carrera hasta un líder técnico— es un proceso manual que consume semanas de trabajo de especialistas instruccionales. NuevaMente automatiza ese flujo: recibe un documento técnico, un perfil de destinatario y un formato pedagógico de salida, y devuelve contenido educativo estructurado y fiel a la fuente original.
+
+## Arquitectura
+
+```mermaid
+flowchart LR
+  A[Usuario] --> B[Frontend<br/>Streamlit o Gradio]
+  B --> C[Backend/API<br/>FastAPI o Flask]
+  C --> D[Ingesta de documentos<br/>PyPDF, Markdown, texto]
+  D --> E[Pipeline RAG<br/>chunking, embeddings, vector store]
+  C --> F[Orquestacion LLM<br/>LangChain + Gemini]
+  E --> F
+  F --> G[Verificacion de fidelidad]
+  G --> C
+  C --> H[OCI Object Storage<br/>Always Free]
+```
+
+## Stack
+
+| Herramienta | Versión sugerida | Motivo |
+|---|---|---|
+| Python | 3.11 | Estable, compatible con las librerías del stack |
+| FastAPI | 0.115.x | HTTP server, async-first, integra bien con Pydantic |
+| Pydantic | 2.x | Validación tipada de entrada/salida del endpoint |
+| LangChain | 0.3.x | Orquestación del pipeline RAG y de prompts |
+| ChromaDB o FAISS | última estable | Vector store para embeddings |
+| langchain-google-genai | última estable | LLM y embeddings de Google Gemini |
+| Streamlit o Gradio | última estable | Interfaz interactiva de carga y visualización |
+| oci (OCI SDK for Python) | última estable | Persistencia en OCI Object Storage, capa Always Free |
+| PyPDF | última estable | Extracción de texto desde archivos PDF |
+
+## Quickstart
+
+```bash
+# 1. Clonar y crear entorno
+git clone https://github.com/<owner>/<repo>.git
+cd <repo>
+python3.11 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# 2. Configurar variables de entorno
+cp .env.example .env
+# Editar .env — mínimo requerido: GOOGLE_API_KEY, OCI_* (config del bucket)
+
+# 3. Iniciar el backend
+uvicorn app.main:app --reload
+
+# 4. Iniciar el frontend (en otra terminal)
+streamlit run frontend/app.py
+```
+
+## Contrato del endpoint principal
+
+```python
+POST /adaptar-contenido
+
+# Entrada
+{
+  "documento_titulo": "Introduccion a la Arquitectura de Redes VCN en OCI",
+  "documento_contenido": "...",
+  "perfil_destinatario": "Principiante",       # o "Lider Tecnico / Arquitecto"
+  "formato_salida": "Flashcards",              # o "Guia Practica Paso a Paso"
+  "nicho_sector": "General",
+  "nivel_detalle": "Didactico"
+}
+
+# Salida
+{
+  "status": "exito",
+  "metadatos": { "perfil_aplicado": "...", "formato_generado": "...", "conceptos_clave": [...] },
+  "contenido_adaptado": { ... },
+  "evaluacion_calidad": { "anclaje_fuente_score": 0.0, "claridad_pedagogica": "..." },
+  "almacenamiento_oci": { "bucket": "...", "objeto_id": "...", "status_upload": "..." }
+}
+```
+
+`perfil_destinatario` y `formato_salida` están limitados a los valores definidos por el equipo (ver `NM-06` en el tablero de tareas), no aceptan texto libre.
+
+## Checklist del MVP
+
+- [ ] Ingesta funcional de documentos técnicos (PDF, Markdown o texto)
+- [ ] Pipeline de RAG con chunking, embeddings y búsqueda vectorial
+- [ ] Orquestación con Gemini vía LangChain
+- [ ] Adaptación funcionando para 2 perfiles y 2 formatos distintos
+- [ ] Salida estructurada en JSON + interfaz interactiva (Streamlit o Gradio)
+- [ ] Integración activa con OCI Object Storage, capa Always Free
+- [ ] Mínimo 3 ejemplos de ejecución con documentos reales o simulados
+- [ ] Documentación completa con diagrama de arquitectura
+
+## Actualizar documentos de referencia
+
+```bash
+# 1. Agregar o editar archivos en docs/
+# 2. Re-ejecutar la ingesta
+python scripts/ingest.py
+# 3. Reiniciar el backend
+uvicorn app.main:app --reload
+```
+
+## Despliegue
+
+- **Frontend/Backend:** Streamlit Community Cloud, Render o una instancia OCI Compute (Always Free) si el equipo decide priorizarlo en la semana 4.
+- **Almacenamiento:** OCI Object Storage, capa Always Free, es obligatorio independientemente de dónde corra la app — así lo exige el checklist del hackathon.
+
+## Estructura del proyecto
+
+```
+nuevamente/
+├── app/
+│   ├── main.py                   # Entry point del backend FastAPI
+│   ├── config.py                 # Settings (pydantic-settings + .env)
+│   ├── ingesta/
+│   │   ├── pdf_loader.py         # Extracción de texto desde PDF (PyPDF)
+│   │   └── text_loader.py        # Lectura de Markdown/texto plano
+│   ├── rag/
+│   │   ├── chunking.py           # Segmentación del texto
+│   │   ├── embeddings.py         # Generación de embeddings
+│   │   └── vector_store.py       # Abstracción Chroma/FAISS
+│   ├── llm/
+│   │   ├── prompts.py            # Prompts por perfil y formato
+│   │   ├── orquestacion.py       # Cadena LangChain + Gemini
+│   │   └── verificacion.py       # Chequeo de fidelidad y metadatos
+│   └── oci/
+│       └── storage.py            # Subida/lectura en OCI Object Storage
+├── frontend/
+│   └── app.py                    # Interfaz Streamlit o Gradio
+├── docs/                         # Documentos fuente para indexar
+├── scripts/
+│   └── ingest.py                 # CLI de ingesta
+├── tests/                        # Test plan y casos automatizados (QA)
+├── requirements.txt
+└── .env.example
+```
+
+## Equipo — G10-LATAM-equipo 45
+
+| Nombre | Rol |
+|---|---|
+| Jessica Escobar | QA Engineer |
+| Larissa Cabrera | Full Stack Developer |
+| Jose Angel Perea Valencia | Backend Developer |
+| Ludwig Maravi | Data Engineer |
