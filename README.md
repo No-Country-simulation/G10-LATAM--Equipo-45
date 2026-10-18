@@ -149,5 +149,3 @@ nuevamente/
 |---|---|
 | Jessica Escobar | QA Engineer |
 | Larissa Cabrera | Full Stack Developer |
-| Jose Angel Perea Valencia | Backend Developer |
-| Ludwig Maravi | Data Engineer |
