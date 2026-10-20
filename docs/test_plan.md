@@ -133,6 +133,7 @@ schema exista:
 | Falla de conexión a OCI (timeout, sin red) | Automatizado (mock) | Previsto |
 | Credenciales inválidas o config faltante | Automatizado (mock) | Previsto |
 | Fallback: el pipeline sigue funcionando en local si OCI no está configurado | Manual | Previsto — recomendado para no bloquear el resto del equipo mientras se arma el bucket |
+| Smoke test contra el bucket real (NM-05): validar config, subir, descargar y comparar, listar y borrar `smoke/<timestamp>.txt` | Manual | Verificado — `python scripts/smoke_oci.py`, corrido el 2026-10-20 contra el bucket `nuevamente-documentos`: TODO OK (subida, descarga, listado y borrado). Requiere bucket, política IAM y `~/.oci/config` |
 
 ## 5. Manual vs. automatizado — criterio general
 
