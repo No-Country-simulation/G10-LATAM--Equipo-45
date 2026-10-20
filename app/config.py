@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     oci_namespace: str = Field(default="", description="Namespace de OCI")
     oci_region: str = Field(default="", description="Región de OCI, ej. sa-saopaulo-1")
     oci_config_profile: str = Field(default="DEFAULT", description="Perfil del ~/.oci/config a usar")
+    almacenamiento_local_path: str = Field(
+        default="./data/almacenamiento_local",
+        description="Carpeta de fallback donde se guardan los archivos si OCI no está disponible (status pendiente_oci)",
+    )
 
     # --- Backend ---
     app_env: Literal["dev", "test", "prod"] = Field(default="dev")
