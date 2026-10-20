@@ -101,3 +101,23 @@ class TestChunksSinContenido:
 
         assert [c.texto for c in chunks] == ["Texto uno", "Texto dos"]
         assert [c.indice for c in chunks] == [0, 1]
+
+
+class TestSaltosDeLineaDentroDeParrafo:
+    """Regresión: texto con saltos de línea "duros" (como el de un PDF) no debe producir palabras pegadas."""
+
+    TEXTO_PDF = (
+        "Una VCN es una red privada y aislada dentro de Oracle Cloud donde corren\n"
+        "tus recursos. Funciona como un datacenter virtual y ningun recurso\n"
+        "es accesible desde afuera salvo que lo habilites. Se puede aislar\n"
+        "y proteger con la red que impide el acceso. "
+    ) * 6
+
+    @pytest.mark.parametrize("tamano,overlap", [(60, 10), (120, 30), (200, 50), (800, 120)])
+    def test_cada_palabra_de_un_chunk_existe_en_el_original(self, tamano, overlap):
+        palabras_originales = set(self.TEXTO_PDF.split())
+
+        chunks = dividir_en_chunks(_doc(self.TEXTO_PDF), tamano_chunk=tamano, overlap=overlap)
+
+        for chunk in chunks:
+            assert set(chunk.texto.split()) <= palabras_originales, chunk.texto

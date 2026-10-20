@@ -18,9 +18,9 @@ class Settings(BaseSettings):
 
     # --- LLM / Embeddings (Google Gemini) ---
     google_api_key: str = Field(default="", description="API key de Google Gemini")
-    gemini_model: str = Field(default="gemini-1.5-flash", description="Modelo de chat usado para orquestación")
+    gemini_model: str = Field(default="gemini-3.8-flash", description="Modelo de chat usado para orquestación")
     gemini_embedding_model: str = Field(
-        default="models/embedding-001", description="Modelo de embeddings de Gemini"
+        default="models/gemini-embedding-001", description="Modelo de embeddings de Gemini (estable; embedding-001 fue dado de baja)"
     )
 
     # --- RAG / Chunking ---
@@ -30,6 +30,9 @@ class Settings(BaseSettings):
         ),
     )
     chunk_overlap: int = Field(default=120, description="Solapamiento entre chunks consecutivos, en caracteres")
+    top_k_recuperacion: int = Field(
+        default=8, description="Cantidad de fragmentos que se recuperan del documento para armar el prompt"
+    )
 
     # --- Vector store ---
     # FAISS está descartado hasta que NM-02 lo confirme: hoy solo se acepta "chroma".
