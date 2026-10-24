@@ -9,6 +9,7 @@ toquen disco ni llamen a la API real de Gemini.
 import uuid
 
 import chromadb
+from unittest.mock import MagicMock
 import pytest
 
 from app.rag.models import Chunk
@@ -135,3 +136,71 @@ class TestReindexar:
         store.agregar_chunks([_chunk("redes", 0, "a.md"), _chunk("almacenamiento", 0, "b.md")])
 
         assert store.cantidad_indexada() == 2
+
+
+class TestFiltroPorNombreArchivo:
+    def test_buscar_con_nombre_archivo_solo_devuelve_chunks_de_ese_documento(self, store):
+        store.agregar_chunks([_chunk("redes", 0, "a.md"), _chunk("mixto", 1, "a.md")])
+        store.agregar_chunks([_chunk("redes", 0, "b.md")])
+
+        resultados = store.buscar("consulta redes", top_k=10, nombre_archivo="a.md")
+
+        assert {r.nombre_archivo for r in resultados} == {"a.md"}
+        assert len(resultados) == 2
+
+    def test_sin_filtro_busca_en_toda_la_coleccion(self, store):
+        store.agregar_chunks([_chunk("redes", 0, "a.md")])
+        store.agregar_chunks([_chunk("redes", 0, "b.md")])
+
+        resultados = store.buscar("consulta redes", top_k=10)
+
+        assert {r.nombre_archivo for r in resultados} == {"a.md", "b.md"}
+
+    def test_filtro_por_documento_inexistente_devuelve_lista_vacia_sin_llamar_al_generador(self, store, generador):
+        store.agregar_chunks([_chunk("redes", 0, "a.md")])
+
+        assert store.buscar("consulta redes", nombre_archivo="no_existe.md") == []
+        assert generador.llamadas_query == 0
+
+    def test_top_k_se_limita_a_lo_que_matchea_el_filtro(self, store):
+        store.agregar_chunks([_chunk("redes", 0, "a.md")])
+        store.agregar_chunks([_chunk("almacenamiento", 0, "b.md"), _chunk("mixto", 1, "b.md")])
+
+        resultados = store.buscar("consulta redes", top_k=5, nombre_archivo="a.md")
+
+        assert [r.texto for r in resultados] == ["redes"]
+
+    def test_el_indice_del_chunk_viaja_en_la_metadata(self, store):
+        store.agregar_chunks([_chunk("redes", 7)])
+
+        assert store.buscar("consulta redes", top_k=1)[0].metadata["indice"] == 7
+
+
+class TestEliminarDocumento:
+    def test_eliminar_documento_borra_solo_sus_chunks(self, store):
+        store.agregar_chunks([_chunk("redes", 0, "a.md"), _chunk("mixto", 1, "a.md")])
+        store.agregar_chunks([_chunk("almacenamiento", 0, "b.md")])
+
+        store.eliminar_documento("a.md")
+
+        assert store.cantidad_indexada() == 1
+        assert store.buscar("consulta redes", nombre_archivo="a.md") == []
+
+
+class TestTelemetria:
+    def test_cliente_persistente_se_crea_sin_telemetria(self, generador, tmp_path, monkeypatch):
+        capturado = {}
+
+        def falso_persistent_client(path, settings):
+            capturado["settings"] = settings
+            return MagicMock()  # evita mezclar settings distintos en el singleton de EphemeralClient
+
+        monkeypatch.setattr(chromadb, "PersistentClient", falso_persistent_client)
+
+        VectorStore(
+            generador_embeddings=generador,
+            path=str(tmp_path),
+            nombre_coleccion=f"test_{uuid.uuid4().hex}",
+        )
+
+        assert capturado["settings"].anonymized_telemetry is False

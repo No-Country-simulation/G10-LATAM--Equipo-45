@@ -15,6 +15,7 @@ necesitar para mostrar de qué documento/chunk salió cada resultado.
 import logging
 
 import chromadb
+from chromadb.config import Settings as ChromaSettings
 
 from app.rag.embeddings import GeneradorDeEmbeddings
 from app.rag.models import Chunk
@@ -61,7 +62,10 @@ class VectorStore:
         path = path or settings.vector_store_path
         nombre_coleccion = nombre_coleccion or settings.vector_store_collection
 
-        self._cliente = cliente or chromadb.PersistentClient(path=path)
+        # Sin telemetría: Chroma enviaría eventos anónimos de uso por defecto.
+        self._cliente = cliente or chromadb.PersistentClient(
+            path=path, settings=ChromaSettings(anonymized_telemetry=False)
+        )
         # Métrica coseno: sin esto Chroma usa L2 al cuadrado, cuya distancia puede
         # ser > 1 y haría que `score = 1 - distancia` diera valores negativos.
         # Ojo: solo aplica al CREAR la colección; una ya existente conserva su métrica.
@@ -87,7 +91,9 @@ class VectorStore:
                 embeddings=[vector for _, vector in pares],
                 documents=[chunk.texto for chunk, _ in pares],
                 metadatas=[
-                    {"nombre_archivo": chunk.nombre_archivo, **chunk.metadata}
+                    # "indice" viaja en la metadata para poder reordenar los resultados de una
+                    # búsqueda según su posición original en el documento (ver Orquestador).
+                    {"nombre_archivo": chunk.nombre_archivo, **chunk.metadata, "indice": chunk.indice}
                     for chunk, _ in pares
                 ],
             )
@@ -96,9 +102,17 @@ class VectorStore:
 
         return len(pares)
 
-    def buscar(self, query: str, top_k: int = 5) -> list[ResultadoBusqueda]:
+    def buscar(
+        self, query: str, top_k: int = 5, nombre_archivo: str | None = None
+    ) -> list[ResultadoBusqueda]:
         """
         Busca los `top_k` chunks más semánticamente similares a `query`.
+
+        Args:
+            nombre_archivo: si se indica, solo se consideran los chunks de ese documento
+                (filtro `where` de Chroma). Sin esto la búsqueda abarca toda la colección y,
+                con varios documentos indexados, mezclaría fragmentos ajenos al documento
+                que se está adaptando.
 
         Returns:
             Lista de ResultadoBusqueda ordenada de mayor a menor similitud.
@@ -107,7 +121,18 @@ class VectorStore:
         if top_k <= 0:
             raise ValueError("top_k debe ser mayor a 0")
 
-        if self._coleccion.count() == 0:
+        where = {"nombre_archivo": nombre_archivo} if nombre_archivo is not None else None
+
+        if where is None:
+            disponibles = self._coleccion.count()
+        else:
+            # n_results no puede superar lo que matchea el filtro, así que se cuenta primero.
+            try:
+                disponibles = len(self._coleccion.get(where=where, include=[])["ids"])
+            except Exception as e:  # noqa: BLE001
+                raise ErrorDeVectorStore(f"Fallo al consultar Chroma: {e}") from e
+
+        if disponibles == 0:
             return []
 
         embedding_query = self._generador.generar_embedding_query(query)
@@ -115,7 +140,8 @@ class VectorStore:
         try:
             resultado = self._coleccion.query(
                 query_embeddings=[embedding_query],
-                n_results=min(top_k, self._coleccion.count()),
+                n_results=min(top_k, disponibles),
+                where=where,
             )
         except Exception as e:  # noqa: BLE001
             raise ErrorDeVectorStore(f"Fallo al consultar Chroma: {e}") from e
@@ -135,6 +161,19 @@ class VectorStore:
             )
             for doc, meta, distancia in zip(documentos, metadatas, distancias)
         ]
+
+    def eliminar_documento(self, nombre_archivo: str) -> None:
+        """
+        Borra todos los chunks de un documento.
+
+        Se usa antes de reindexar: el upsert pisa los chunks con el mismo id, pero si la
+        nueva versión del documento tiene menos chunks, los sobrantes de la versión anterior
+        quedarían huérfanos y aparecerían en las búsquedas filtradas por `nombre_archivo`.
+        """
+        try:
+            self._coleccion.delete(where={"nombre_archivo": nombre_archivo})
+        except Exception as e:  # noqa: BLE001
+            raise ErrorDeVectorStore(f"Fallo al eliminar el documento en Chroma: {e}") from e
 
     def cantidad_indexada(self) -> int:
         return self._coleccion.count()
