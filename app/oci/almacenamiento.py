@@ -32,6 +32,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Literal, Protocol
 
 import oci
+import requests
 
 from app.config import settings
 
@@ -72,6 +73,7 @@ ERRORES_ESPERADOS_DE_OCI: tuple[type[BaseException], ...] = (
     oci.exceptions.InvalidPrivateKey,
     oci.exceptions.RequestException,
     oci.exceptions.ConnectTimeout,
+    requests.exceptions.Timeout,
     ConnectionError,
     TimeoutError,
     OSError,
@@ -119,7 +121,12 @@ def _crear_cliente_oci() -> ClienteDeObjetos:
     config["region"] = settings.oci_region
     oci.config.validate_config(config)
 
-    return oci.object_storage.ObjectStorageClient(config)
+    # Timeouts explícitos (conexión, lectura): el SDK no aplica reintentos por defecto, así que una
+    # llamada colgada vence a los `oci_connect_timeout_s + oci_read_timeout_s` como mucho. El error que
+    # sale (requests Timeout / oci ConnectTimeout) está en ERRORES_ESPERADOS_DE_OCI y activa el fallback local.
+    return oci.object_storage.ObjectStorageClient(
+        config, timeout=(settings.oci_connect_timeout_s, settings.oci_read_timeout_s)
+    )
 
 
 def sanitizar_nombre(nombre: str) -> str:

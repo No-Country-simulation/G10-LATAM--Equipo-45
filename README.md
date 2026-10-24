@@ -182,6 +182,23 @@ Todos los errores tienen la misma forma, con mensajes en español y sin detalles
 
 Smoke test manual (una sola solicitud real, gasta cuota de Gemini): `python scripts/smoke_endpoint.py`.
 
+### Logs, tiempos máximos y diagnóstico de cuelgues
+
+**Logs.** Al arrancar, la app instala un handler a stdout en el logger `app` (se ve bajo `uvicorn`). Nivel con `LOG_LEVEL` (`DEBUG`, `INFO`, `WARNING`, `ERROR`; por defecto `INFO`). Cada paso de una solicitud deja `paso=<nombre> inicio` y `paso=<nombre> ok duracion=1.23s`; si falla, `paso=<nombre> FALLÓ duracion=... error=<TipoDeExcepcion>`. Pasos: `inicializar_dependencias` (solo la primera solicitud), `guardar_entrada`, `ingesta`, `subida_original`, `indexacion`, `busqueda`, `generacion`, `limpieza`, `fidelidad`, `subida_json`. No se registra contenido del documento, nombre de archivo ni claves. También se ven los reintentos de la librería de Gemini (WARNING).
+
+**Tiempos máximos** (segundos; un timeout termina en un error normalizado y el manejo de errores lo mapea):
+
+| Variable | Por defecto | Qué acota | Si vence |
+|---|---|---|---|
+| `GEMINI_TIMEOUT_S` | 45 | cada solicitud a Gemini (deadline gRPC) | `ErrorDeLLM` → 503 |
+| `GEMINI_TIMEOUT_TOTAL_S` | 100 | toda la generación, reintentos de la librería incluidos | `ErrorDeLLM` → 503 |
+| `EMBEDDINGS_TIMEOUT_S` | 60 | cada llamada de embeddings | `ErrorDeEmbeddings` → 503 (en la fidelidad: 200 degradado) |
+| `OCI_CONNECT_TIMEOUT_S` / `OCI_READ_TIMEOUT_S` | 5 / 30 | conexión y lectura del cliente de OCI | fallback a disco local (`pendiente_oci`) |
+
+Reintentos de Gemini: la librería (`langchain-google-genai` 2.0.6) hace como mucho 2 intentos por llamada con espera de 1-60 s, ante cualquier error de la API (un 429 incluido); eso no es configurable. Los parámetros `timeout`/`max_retries` del constructor se ignoran en la ruta síncrona, por eso el plazo se pasa en cada llamada, junto con `retry=None` para anular el reintento del cliente gRPC (que ante un 503 insistía hasta 600 s). Además, si el modelo devuelve JSON inválido, el orquestador reintenta una vez (otra llamada).
+
+**Diagnóstico.** Si una solicitud se cuelga, `python scripts/diagnostico_pasos.py [limite_chroma] [limite_embedding] [limite_oci] [limite_gemini]` prueba por separado y con cronómetro: Chroma, un embedding, subir/descargar/borrar un archivo en OCI (sin fallback local) y UNA llamada a Gemini. Imprime OK / FALLÓ / TIMEOUT con la duración de cada paso y cuál es el sospechoso. Necesita `.env` y `~/.oci/config`. Salida: 0 todo OK, 1 algún FALLÓ, 2 algún TIMEOUT.
+
 ## Próximamente (aún no implementado)
 
 Estos comandos apuntan a archivos que todavía no existen en el repo (`frontend/app.py`, `scripts/ingest.py`):

@@ -19,7 +19,9 @@ from app.api.errores import ErrorDeTamano, registrar_manejadores
 from app.api.schemas import ErrorRespuesta, FormatoSalida, PerfilDestinatario, RespuestaAdaptacion, SolicitudAdaptacion
 from app.api.servicio import ServicioDeAdaptacion
 from app.config import settings
+from app.logging_config import configurar_logging
 
+configurar_logging()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(

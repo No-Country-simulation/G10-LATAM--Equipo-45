@@ -23,6 +23,23 @@ class Settings(BaseSettings):
         default="models/gemini-embedding-001", description="Modelo de embeddings de Gemini (estable; embedding-001 fue dado de baja)"
     )
 
+    gemini_timeout_s: float = Field(
+        default=45.0,
+        gt=0,
+        description=(
+            "Plazo (segundos) de CADA solicitud a Gemini (deadline gRPC). La librería hace como mucho 2 intentos "
+            "(no es configurable), así que el peor caso es ~2x este valor + la espera entre intentos"
+        ),
+    )
+    gemini_timeout_total_s: float = Field(
+        default=100.0,
+        gt=0,
+        description="Tope de reloj (segundos) de toda la generación, reintentos de la librería incluidos",
+    )
+    embeddings_timeout_s: float = Field(
+        default=60.0, gt=0, description="Tope de reloj (segundos) de cada llamada de embeddings a Gemini"
+    )
+
     # --- RAG / Chunking ---
     chunk_size: int = Field(default=800, description=(
             "Tamaño base de cada chunk, en caracteres. Ojo: el chunk final puede medir hasta "
@@ -61,6 +78,8 @@ class Settings(BaseSettings):
     oci_namespace: str = Field(default="", description="Namespace de OCI")
     oci_region: str = Field(default="", description="Región de OCI, ej. sa-saopaulo-1")
     oci_config_profile: str = Field(default="DEFAULT", description="Perfil del ~/.oci/config a usar")
+    oci_connect_timeout_s: float = Field(default=5.0, gt=0, description="Timeout de conexión (s) del cliente de OCI")
+    oci_read_timeout_s: float = Field(default=30.0, gt=0, description="Timeout de lectura (s) del cliente de OCI")
     almacenamiento_local_path: str = Field(
         default="./data/almacenamiento_local",
         description="Carpeta de fallback donde se guardan los archivos si OCI no está disponible (status pendiente_oci)",

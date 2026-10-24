@@ -6,12 +6,16 @@ no soportada o sin texto útil (ej. PDF escaneado sin OCR) no llega al pipeline,
 en el bucket solo acumularía basura que nadie va a poder usar.
 """
 
+import logging
 from pathlib import Path
 
 from app.ingesta.models import DocumentoIngerido
 from app.ingesta.pdf_loader import cargar_pdf
 from app.ingesta.text_loader import cargar_texto
 from app.oci.almacenamiento import Almacenamiento, ResultadoSubida
+from app.trazas import paso
+
+logger = logging.getLogger(__name__)
 
 CONTENT_TYPES = {
     ".pdf": "application/pdf",
@@ -37,10 +41,12 @@ def ingerir_y_subir(
     """
     ruta = Path(ruta)
     extension = ruta.suffix.lower()
-    documento = cargar_pdf(ruta) if extension == ".pdf" else cargar_texto(ruta)
+    with paso(logger, "ingesta"):
+        documento = cargar_pdf(ruta) if extension == ".pdf" else cargar_texto(ruta)
 
     if documento.esta_vacio:
         return documento, None
 
-    resultado = almacenamiento.subir_documento(ruta.name, ruta.read_bytes(), CONTENT_TYPES.get(extension))
+    with paso(logger, "subida_original"):
+        resultado = almacenamiento.subir_documento(ruta.name, ruta.read_bytes(), CONTENT_TYPES.get(extension))
     return documento, resultado

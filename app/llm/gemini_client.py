@@ -15,6 +15,7 @@ import logging
 from typing import Protocol
 
 from app.config import settings
+from app.trazas import TiempoAgotado, ejecutar_con_limite
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +42,23 @@ class _ModeloLangChain:
     traduce a "dos strings entran, un string sale" para no filtrar esos tipos al resto del código.
     """
 
-    def __init__(self, chat):
+    def __init__(self, chat, timeout: float | None = None):
         self._chat = chat
+        self._timeout = timeout
 
     def invocar(self, prompt_sistema: str, prompt_usuario: str) -> str:
         from langchain_core.messages import HumanMessage, SystemMessage
 
+        # Reintentos y plazos (verificado en langchain-google-genai 2.0.6):
+        #  - El `timeout`/`max_retries` del constructor de ChatGoogleGenerativeAI se IGNORAN en el camino
+        #    síncrono (solo los usa el LLM de texto). Por eso el plazo se pasa por llamada: los kwargs de
+        #    `invoke` llegan hasta `client.generate_content`.
+        #  - `retry=None` desactiva el reintento por defecto del cliente gRPC (ante 503, hasta 600 s).
+        #  - Queda el reintento de la librería (tenacity: 2 intentos, espera 1-60 s, sobre cualquier
+        #    GoogleAPIError, 429 incluido). No es configurable; `gemini_timeout_total_s` acota el conjunto.
+        opciones = {"timeout": self._timeout, "retry": None} if self._timeout else {}
         respuesta = self._chat.invoke(
-            [SystemMessage(content=prompt_sistema), HumanMessage(content=prompt_usuario)]
+            [SystemMessage(content=prompt_sistema), HumanMessage(content=prompt_usuario)], **opciones
         )
         contenido = respuesta.content
         if isinstance(contenido, str):
@@ -74,7 +84,8 @@ def _crear_modelo_gemini() -> ModeloDeChat:
             model=settings.gemini_model,
             google_api_key=settings.google_api_key,
             temperature=TEMPERATURA,
-        )
+        ),
+        timeout=settings.gemini_timeout_s,
     )
 
 
@@ -102,12 +113,20 @@ class ClienteGemini:
 
         Raises:
             ErrorDeLLM: si falta la API key, si el proveedor falla (rate limit,
-                red, etc.) o si la respuesta viene vacía o solo con espacios.
+                red, etc.), si se supera `gemini_timeout_total_s` o si la respuesta
+                viene vacía o solo con espacios.
         """
+        modelo = self.modelo  # se crea fuera del hilo: así una API key faltante falla en el acto
         try:
-            texto = self.modelo.invocar(prompt_sistema, prompt_usuario)
+            texto = ejecutar_con_limite(
+                lambda: modelo.invocar(prompt_sistema, prompt_usuario),
+                settings.gemini_timeout_total_s,
+                "Gemini",
+            )
         except ErrorDeLLM:
             raise
+        except TiempoAgotado as e:
+            raise ErrorDeLLM(f"Gemini no respondió a tiempo: {e}") from e
         except Exception as e:  # noqa: BLE001 — cualquier falla del proveedor se normaliza acá
             raise ErrorDeLLM(f"Fallo al llamar a Gemini: {e}") from e
 

@@ -35,6 +35,7 @@ from app.llm.prompts import (
 )
 from app.rag.chunking import dividir_en_chunks
 from app.rag.vector_store import ResultadoBusqueda, VectorStore
+from app.trazas import paso
 
 logger = logging.getLogger(__name__)
 
@@ -155,12 +156,15 @@ class Orquestador:
 
         # Se borra la versión previa del documento: si el nuevo tiene menos chunks, los viejos
         # sobrantes se mezclarían en la recuperación filtrada por nombre_archivo.
-        self._store.eliminar_documento(nombre_archivo)
-        self._store.agregar_chunks(chunks)
+        with paso(logger, "indexacion"):
+            self._store.eliminar_documento(nombre_archivo)
+            self._store.agregar_chunks(chunks)
+        logger.info("indexacion: %d chunks", len(chunks))
 
-        fragmentos = self._store.buscar(
-            f"{documento_titulo}. {FRASE_QUERY_GENERICA}", top_k=top_k, nombre_archivo=nombre_archivo
-        )
+        with paso(logger, "busqueda"):
+            fragmentos = self._store.buscar(
+                f"{documento_titulo}. {FRASE_QUERY_GENERICA}", top_k=top_k, nombre_archivo=nombre_archivo
+            )
         # La búsqueda ordena por relevancia; para la prompt se reordena por posición original,
         # así una guía paso a paso conserva la secuencia del documento.
         fragmentos.sort(key=lambda f: f.metadata.get("indice", float("inf")))
@@ -170,7 +174,8 @@ class Orquestador:
             documento_titulo, "\n\n".join(f.texto for f in fragmentos)
         )
 
-        items = self._generar_items(prompt_sistema, prompt_usuario, formato)
+        with paso(logger, "generacion"):
+            items = self._generar_items(prompt_sistema, prompt_usuario, formato)
         return ResultadoOrquestacion(
             items=items, perfil=perfil, formato=formato, fragmentos_usados=fragmentos
         )
