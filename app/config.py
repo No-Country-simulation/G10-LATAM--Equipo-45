@@ -34,6 +34,20 @@ class Settings(BaseSettings):
         default=8, description="Cantidad de fragmentos que se recuperan del documento para armar el prompt"
     )
 
+    # --- Verificación de fidelidad (NM-20) ---
+    umbral_anclaje: float = Field(
+        default=0.72,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Score de anclaje (similitud coseno promedio contenido/fuente) por debajo del cual la "
+            "respuesta se marca como baja confianza. Calibrado con scripts/calibrar_fidelidad.py "
+            "sobre 12 casos fijos y una fuente de 2 fragmentos (punto medio entre 'otro tema' <= 0.661 "
+            "e 'inventados del mismo tema' >= 0.777); conviene revisarlo con documentos reales. "
+            "Detecta contenido fuera de tema, no datos inventados sobre el mismo tema."
+        ),
+    )
+
     # --- Vector store ---
     # FAISS está descartado hasta que NM-02 lo confirme: hoy solo se acepta "chroma".
     vector_store_backend: Literal["chroma"] = Field(

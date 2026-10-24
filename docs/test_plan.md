@@ -110,6 +110,29 @@ No marcamos nada como "listo" sin un test que lo respalde — ver el análisis d
 | Vector store: `eliminar_documento` borra solo los chunks del documento | Automatizado | Verificado | `tests/test_vector_store.py::TestEliminarDocumento::test_eliminar_documento_borra_solo_sus_chunks` |
 | Calidad del contenido generado de punta a punta con Gemini real | Manual | Previsto | Requiere `GOOGLE_API_KEY` y un documento real de OCI |
 
+### Verificación de fidelidad (NM-20)
+
+Similitud de embeddings entre el contenido generado y los fragmentos recuperados, sin segundo LLM.
+Si el anclaje es bajo se marca `baja_confianza` pero no se bloquea. Todavía no está conectado al
+orquestador ni al endpoint. Los tests usan un fake de embeddings por palabras clave (sin red).
+
+| Caso | Tipo | Estado | Dónde |
+|---|---|---|---|
+| Coseno: iguales = 1, ortogonales = 0, opuestos = -1, independiente de la magnitud | Automatizado | Verificado | `tests/test_fidelidad.py::TestSimilitudCoseno` |
+| Coseno con vector nulo da 0 (sin dividir por cero); dimensiones distintas lanzan `ValueError` | Automatizado | Verificado | `test_vector_nulo_da_cero_sin_dividir_por_cero`, `test_dimensiones_distintas_lanza_value_error` |
+| Extracción de unidades: flashcards (solo respuesta) y guía (título + detalle); ítems vacíos se saltean | Automatizado | Verificado | `tests/test_fidelidad.py::TestExtraerUnidades` |
+| Unidades parecidas a la fuente dan score alto; unidades distintas dan score bajo | Automatizado | Verificado | `TestScore::test_unidades_parecidas_a_la_fuente_dan_score_alto`, `test_unidades_distintas_a_la_fuente_dan_score_bajo` |
+| Score = promedio de las similitudes máximas, acotado a [0, 1]; detalle con índice del fragmento | Automatizado | Verificado | `test_el_score_es_el_promedio_de_las_similitudes_maximas`, `test_el_score_se_acota_a_cero_si_la_similitud_es_negativa`, `test_detalle_indica_unidad_similitud_maxima_e_indice_del_fragmento` |
+| Umbral: score igual al umbral no es baja confianza, por debajo sí; default desde `settings.umbral_anclaje` (rango 0-1) | Automatizado | Verificado | `TestUmbral` |
+| Sin unidades o sin fragmentos: `baja_confianza=True` con motivo, sin llamar a embeddings | Automatizado | Verificado | `TestCasosBorde::test_sin_unidades_es_baja_confianza_sin_llamar_a_embeddings`, `test_sin_fragmentos_es_baja_confianza_sin_llamar_a_embeddings` |
+| Vectores de dimensiones inconsistentes: `baja_confianza=True` con motivo, sin lanzar | Automatizado | Verificado | `test_dimensiones_inconsistentes_dan_baja_confianza_con_motivo` |
+| `ErrorDeEmbeddings` sube tal cual (lo decide el backend) | Automatizado | Verificado | `test_error_de_embeddings_sube_tal_cual` |
+| Una sola llamada batch para las unidades y otra para los fragmentos | Automatizado | Verificado | `TestBatch::test_una_sola_llamada_por_conjunto` |
+| Calibración del umbral con embeddings reales sobre un set golden (6 fieles, 6 infieles; fuente de 2 fragmentos) | Manual | Verificado — `python scripts/calibrar_fidelidad.py` (solo embeddings, requiere `GOOGLE_API_KEY`). Fieles 0.805-0.900; inventados del mismo tema 0.777-0.856; otro tema 0.611-0.661. Umbral `0.72` = punto medio entre 0.661 y 0.777 |
+| Límite conocido: el score NO separa fieles de datos inventados sobre el mismo tema (rangos solapados) | Manual | Verificado — el score mide anclaje temático, no veracidad; solo detecta contenido fuera de tema. No hay mitigación automática; requiere revisión humana o un juez distinto |
+| Re-calibración del umbral con un documento real y muchos fragmentos | Manual | Previsto | NM-30: correr con un documento real de OCI; el set actual (12 casos, 2 fragmentos) es chico |
+| Integración del verificador en `Orquestador.adaptar` / endpoint | Automatizado | Previsto | Se conecta junto con el endpoint (NM-23) |
+
 ## 3. Esquema de entrada/salida (NM-06 — Pydantic, de Larissa/Jose)
 
 **Depende de que NM-06 esté cerrado.** Casos previstos, a automatizar en cuanto el
