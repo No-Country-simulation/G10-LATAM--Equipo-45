@@ -2,9 +2,10 @@
 pydantic==2.10.3
 pydantic-settings==2.6.1
 
-# --- Backend: API (previsto Semana 3+) ---
+# --- Backend: API (usado hoy; python-multipart es necesario para recibir multipart/form-data) ---
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
+python-multipart==0.0.20
 
 # --- Ingesta (usado hoy) ---
 pypdf==5.1.0
@@ -29,7 +30,7 @@ pytest==8.3.3
 reportlab==5.0.1
 pytest-mock==3.14.0
 
-# --- QA / Tests: previsto Semana 3+ (tests del endpoint) ---
+# --- QA / Tests: usado hoy (fastapi.testclient requiere httpx) ---
 httpx==0.27.2
 
 # --- Compatibilidad: chromadb 0.5.23 no es compatible con posthog>=6 (rompe la telemetría)
