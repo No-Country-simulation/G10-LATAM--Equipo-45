@@ -11,8 +11,9 @@ __pycache__/
 data/
 *.sqlite3
 
-# OCI
+# OCI (credenciales y claves privadas: nunca al repo)
 .oci/
+*.pem
 
 # IDE
 .vscode/
