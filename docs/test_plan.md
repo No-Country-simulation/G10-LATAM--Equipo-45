@@ -73,7 +73,42 @@ No marcamos nada como "listo" sin un test que lo respalde — ver el análisis d
 | Las 4 combinaciones generan prompts distintos | Automatizado | Verificado | `test_las_cuatro_combinaciones_generan_prompts_distintos` |
 | Los valores de los enums coinciden con el contrato del endpoint | Automatizado | Verificado | `test_valores_de_los_enums_coinciden_con_el_contrato_del_endpoint` |
 | El prompt de usuario incluye título y contenido del documento | Automatizado | Verificado | `TestConstruirPromptUsuario::test_incluye_titulo_y_contenido_del_documento` |
+| La guía práctica se pide como objeto `{"pasos": [...]}` (instrucción) | Automatizado | Verificado | `tests/test_prompts.py::TestFormaDeSalidaDeLaGuiaPractica::test_instruccion_pide_un_objeto_con_la_clave_pasos` |
+| El ejemplo few-shot de la guía es un objeto con lista de pasos `titulo`/`detalle` | Automatizado | Verificado | `tests/test_prompts.py::TestFormaDeSalidaDeLaGuiaPractica::test_ejemplo_few_shot_es_un_objeto_con_lista_de_pasos` |
+| Los ejemplos few-shot de ambos formatos pasan la validación del orquestador | Automatizado | Verificado | `tests/test_prompts.py::TestFormaDeSalidaDeLaGuiaPractica::test_el_ejemplo_few_shot_pasa_la_validacion_del_orquestador` |
+| Smoke test contra Gemini real (embeddings `gemini-embedding-001`, chat y orquestación) | Manual | Previsto | `python scripts/smoke_gemini.py` — requiere `GOOGLE_API_KEY`; aún no corrido con clave real |
 | Calidad de la salida del LLM con cada prompt | Manual | Previsto | Evaluar a mano con Gemini real antes de la demo |
+
+### Cliente de Gemini (NM-16)
+
+| Caso | Tipo | Estado | Dónde |
+|---|---|---|---|
+| Éxito: devuelve el texto del modelo y le pasa ambos prompts | Automatizado | Verificado | `tests/test_gemini_client.py::TestGenerar::test_devuelve_el_texto_del_modelo_y_le_pasa_ambos_prompts` |
+| Excepción del proveedor (rate limit, red) se normaliza a `ErrorDeLLM` | Automatizado | Verificado | `tests/test_gemini_client.py::TestGenerar::test_excepcion_del_proveedor_se_normaliza_a_error_de_llm` |
+| Respuesta vacía o solo espacios lanza `ErrorDeLLM` | Automatizado | Verificado | `tests/test_gemini_client.py::TestGenerar::test_respuesta_vacia_o_solo_espacios_lanza_error_de_llm` |
+| Falta de `GOOGLE_API_KEY` da un error claro | Automatizado | Verificado | `tests/test_gemini_client.py::TestGenerar::test_sin_api_key_y_sin_modelo_inyectado_falla_con_mensaje_claro` |
+| Llamada real a Gemini con el modelo `gemini-3.8-flash` | Manual | Previsto | Requiere `GOOGLE_API_KEY`; probar antes de la demo |
+
+### Orquestador (NM-17)
+
+| Caso | Tipo | Estado | Dónde |
+|---|---|---|---|
+| Caso feliz con Flashcards | Automatizado | Verificado | `tests/test_orquestador.py::TestCasoFeliz::test_flashcards` |
+| Caso feliz con Guía práctica (y tolerancia al envoltorio `pasos`) | Automatizado | Verificado | `tests/test_orquestador.py::TestCasoFeliz::test_guia_practica`, `test_guia_practica_tolera_el_envoltorio_pasos` |
+| Documento vacío o sin texto útil lanza `ErrorDeOrquestacion` sin llamar a Gemini | Automatizado | Verificado | `tests/test_orquestador.py::TestDocumentoVacio::test_documento_sin_texto_util_lanza_error_sin_llamar_a_gemini` |
+| JSON dentro de fences \`\`\`json | Automatizado | Verificado | `tests/test_orquestador.py::TestParseoDelJson::test_json_con_fences_markdown` |
+| JSON inválido con reintento exitoso | Automatizado | Verificado | `test_json_invalido_con_reintento_exitoso` |
+| JSON inválido dos veces: error tras un solo reintento | Automatizado | Verificado | `test_json_invalido_dos_veces_lanza_error_tras_un_solo_reintento` |
+| Estructura con forma incorrecta | Automatizado | Verificado | `test_estructura_con_forma_incorrecta_lanza_error` |
+| Los fragmentos pasan al prompt en el orden del documento | Automatizado | Verificado | `tests/test_orquestador.py::TestRecuperacionYPrompt::test_los_fragmentos_llegan_al_prompt_en_el_orden_del_documento` |
+| `top_k` limita y conserva los más relevantes | Automatizado | Verificado | `test_top_k_limita_los_fragmentos_y_se_queda_con_los_mas_relevantes` |
+| El prompt de sistema corresponde al perfil y formato | Automatizado | Verificado | `test_prompt_de_sistema_corresponde_al_perfil_y_formato` |
+| El filtro por `nombre_archivo` evita mezclar documentos | Automatizado | Verificado | `test_el_filtro_por_nombre_archivo_evita_mezclar_documentos` |
+| Reindexar una versión más corta no deja fragmentos viejos | Automatizado | Verificado | `test_reindexar_una_version_mas_corta_no_deja_fragmentos_viejos` |
+| Falla de Gemini se propaga como `ErrorDeLLM`, sin reintento | Automatizado | Verificado | `tests/test_orquestador.py::TestFallasDeGemini::test_falla_de_gemini_se_propaga_como_error_de_llm_sin_reintentar` |
+| Vector store: filtro por `nombre_archivo`, `top_k` acotado al filtro, índice en metadata | Automatizado | Verificado | `tests/test_vector_store.py::TestFiltroPorNombreArchivo::test_buscar_con_nombre_archivo_solo_devuelve_chunks_de_ese_documento`, `test_sin_filtro_busca_en_toda_la_coleccion`, `test_filtro_por_documento_inexistente_devuelve_lista_vacia_sin_llamar_al_generador`, `test_top_k_se_limita_a_lo_que_matchea_el_filtro`, `test_el_indice_del_chunk_viaja_en_la_metadata` |
+| Vector store: `eliminar_documento` borra solo los chunks del documento | Automatizado | Verificado | `tests/test_vector_store.py::TestEliminarDocumento::test_eliminar_documento_borra_solo_sus_chunks` |
+| Calidad del contenido generado de punta a punta con Gemini real | Manual | Previsto | Requiere `GOOGLE_API_KEY` y un documento real de OCI |
 
 ## 3. Esquema de entrada/salida (NM-06 — Pydantic, de Larissa/Jose)
 

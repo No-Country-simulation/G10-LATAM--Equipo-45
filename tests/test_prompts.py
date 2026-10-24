@@ -1,7 +1,10 @@
 """NM-14 — Tests unitarios de los prompts base (NM-13)."""
 
+import json
+
 import pytest
 
+from app.llm.orquestador import _validar_items
 from app.llm.prompts import (
     _EJEMPLO_FEW_SHOT,
     _INSTRUCCION_POR_FORMATO,
@@ -49,6 +52,27 @@ class TestConstruirPromptSistema:
     def test_valores_de_los_enums_coinciden_con_el_contrato_del_endpoint(self):
         assert {p.value for p in PerfilDestinatario} == {"Principiante", "Lider Tecnico / Arquitecto"}
         assert {f.value for f in FormatoSalida} == {"Flashcards", "Guia Practica Paso a Paso"}
+
+
+class TestFormaDeSalidaDeLaGuiaPractica:
+    def test_instruccion_pide_un_objeto_con_la_clave_pasos(self):
+        instruccion = _INSTRUCCION_POR_FORMATO[FormatoSalida.GUIA_PRACTICA]
+
+        assert "objeto" in instruccion
+        assert "'pasos'" in instruccion
+        assert "'titulo'" in instruccion and "'detalle'" in instruccion
+
+    def test_ejemplo_few_shot_es_un_objeto_con_lista_de_pasos(self):
+        ejemplo = json.loads(_EJEMPLO_FEW_SHOT[FormatoSalida.GUIA_PRACTICA])
+
+        assert list(ejemplo) == ["pasos"]
+        assert all(set(paso) == {"titulo", "detalle"} for paso in ejemplo["pasos"])
+
+    @pytest.mark.parametrize("formato", list(FormatoSalida))
+    def test_el_ejemplo_few_shot_pasa_la_validacion_del_orquestador(self, formato):
+        ejemplo = json.loads(_EJEMPLO_FEW_SHOT[formato])
+
+        assert len(_validar_items(ejemplo, formato)) >= 1
 
 
 class TestConstruirPromptUsuario:

@@ -58,9 +58,10 @@ _INSTRUCCION_POR_FORMATO: dict[FormatoSalida, str] = {
         "flashcards según la densidad del contenido fuente."
     ),
     FormatoSalida.GUIA_PRACTICA: (
-        "Generá el contenido como una guía práctica paso a paso en JSON, "
-        "con una lista ordenada de 'pasos', cada uno con 'titulo' y "
-        "'detalle'. Cada paso debe ser accionable (algo que el lector hace "
+        "Generá el contenido como una guía práctica paso a paso en JSON: "
+        "un objeto con una única clave 'pasos', cuyo valor es una lista "
+        "ordenada de pasos, cada uno con 'titulo' y 'detalle'. "
+        "Cada paso debe ser accionable (algo que el lector hace "
         "o verifica, no solo lee). Si el documento fuente describe un "
         "proceso, preservá el orden original salvo que haya una razón "
         "pedagógica explícita para cambiarlo."
@@ -79,10 +80,10 @@ _EJEMPLO_FEW_SHOT: dict[FormatoSalida, str] = {
         'direccionamiento IP, subredes y reglas de tráfico."}]'
     ),
     FormatoSalida.GUIA_PRACTICA: (
-        '[{"titulo": "Crear la VCN", "detalle": "Desde la consola de OCI, '
-        'ir a Networking > Virtual Cloud Networks y hacer clic en Create '
-        'VCN. Definir un bloque CIDR que no colisione con tu red on-premise '
-        'si vas a usar VPN o FastConnect."}]'
+        '{"pasos": [{"titulo": "Crear la VCN", "detalle": "Desde la consola '
+        'de OCI, ir a Networking > Virtual Cloud Networks y hacer clic en '
+        'Create VCN. Definir un bloque CIDR que no colisione con tu red '
+        'on-premise si vas a usar VPN o FastConnect."}]}'
     ),
 }
 
