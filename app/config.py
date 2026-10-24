@@ -18,7 +18,17 @@ class Settings(BaseSettings):
 
     # --- LLM / Embeddings (Google Gemini) ---
     google_api_key: str = Field(default="", description="API key de Google Gemini")
-    gemini_model: str = Field(default="gemini-3.8-flash", description="Modelo de chat usado para orquestación")
+    gemini_model: str = Field(default="gemini-3.5-flash", description="Modelo de chat usado para orquestación")
+    gemini_model_fallbacks: str = Field(
+        default="gemini-3.8-flash,gemini-3.5-flash-lite",
+        description=(
+            "Modelos de respaldo, separados por coma y en orden: se prueban si el principal falla por "
+            "503, 504/timeout, 429 o 404. Vacía = sin respaldos"
+        ),
+    )
+    gemini_backoff_s: float = Field(
+        default=2.0, ge=0, description="Espera (s) antes de pasar al siguiente modelo (no se espera tras un 404)"
+    )
     gemini_embedding_model: str = Field(
         default="models/gemini-embedding-001", description="Modelo de embeddings de Gemini (estable; embedding-001 fue dado de baja)"
     )
@@ -97,6 +107,17 @@ class Settings(BaseSettings):
     # --- Backend ---
     app_env: Literal["dev", "test", "prod"] = Field(default="dev")
     log_level: str = Field(default="INFO")
+
+    @property
+    def gemini_cadena_modelos(self) -> tuple[str, ...]:
+        """[gemini_model] + respaldos: sin espacios, sin prefijo "models/", sin vacíos ni duplicados (orden estable)."""
+        nombres = [self.gemini_model, *self.gemini_model_fallbacks.split(",")]
+        cadena: dict[str, None] = {}
+        for nombre in nombres:
+            limpio = nombre.strip().removeprefix("models/").strip()
+            if limpio:
+                cadena.setdefault(limpio)
+        return tuple(cadena)
 
     @property
     def max_upload_bytes(self) -> int:

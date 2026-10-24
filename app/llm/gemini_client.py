@@ -12,7 +12,12 @@ Uso típico:
 """
 
 import logging
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Protocol
+
+from google.api_core import exceptions as gexc
 
 from app.config import settings
 from app.trazas import TiempoAgotado, ejecutar_con_limite
@@ -22,6 +27,52 @@ logger = logging.getLogger(__name__)
 # Temperatura baja: la salida tiene que ser JSON estable y anclado al documento fuente,
 # no creativo. Con valores altos sube la chance de JSON roto o de datos inventados.
 TEMPERATURA = 0.2
+
+
+# Margen del tope de reloj de cada intento sobre el plazo de la solicitud (`gemini_timeout_s`): deja que el
+# deadline del cliente venza primero y devuelva su propio error; el tope de reloj solo corta lo que no respeta plazos.
+GRACIA_S = 5.0
+
+# Errores que justifican probar OTRO modelo (el problema es del modelo o de su disponibilidad):
+# 503 alta demanda, 504/deadline, 429 cuota, 404 modelo no disponible, y nuestro tope por llamada.
+_PASAN_AL_SIGUIENTE: tuple[type[BaseException], ...] = (
+    gexc.ServiceUnavailable,
+    gexc.GatewayTimeout,  # DeadlineExceeded hereda de esta
+    gexc.TooManyRequests,  # ResourceExhausted hereda de esta
+    gexc.NotFound,
+    TiempoAgotado,
+)
+# Errores de credenciales o de pedido: otro modelo fallaría igual.
+_NUNCA_PASAN: tuple[type[BaseException], ...] = (gexc.InvalidArgument, gexc.PermissionDenied, gexc.Unauthenticated)
+
+
+def _causas(error: BaseException):
+    """El error y sus causas encadenadas (LangChain a veces envuelve el error de Google)."""
+    visto = 0
+    while error is not None and visto < 5:
+        yield error
+        error = error.__cause__ or error.__context__
+        visto += 1
+
+
+def _motivo_de_cambio(error: BaseException) -> str | None:
+    """Tipo del error si corresponde pasar al siguiente modelo; None si debe propagarse."""
+    causas = list(_causas(error))
+    if any(isinstance(c, _NUNCA_PASAN) for c in causas):
+        return None
+    for c in causas:
+        if isinstance(c, _PASAN_AL_SIGUIENTE):
+            return type(c).__name__
+    return None
+
+
+@dataclass
+class ResultadoGeneracion:
+    """Texto generado, modelo que realmente respondió (None si el cliente es un fake sin nombre) e intentos."""
+
+    texto: str
+    modelo: str | None
+    intentos: int
 
 
 class ErrorDeLLM(Exception):
@@ -69,8 +120,8 @@ class _ModeloLangChain:
         )
 
 
-def _crear_modelo_gemini() -> ModeloDeChat:
-    """Crea el cliente real de Gemini. Falla rápido y con mensaje claro si falta la API key."""
+def _crear_modelo_gemini(nombre: str | None = None) -> ModeloDeChat:
+    """Crea el cliente real de Gemini para un modelo. Falla rápido y claro si falta la API key."""
     if not settings.google_api_key:
         raise ErrorDeLLM(
             "GOOGLE_API_KEY no está configurada. Completá el archivo .env "
@@ -81,7 +132,7 @@ def _crear_modelo_gemini() -> ModeloDeChat:
 
     return _ModeloLangChain(
         ChatGoogleGenerativeAI(
-            model=settings.gemini_model,
+            model=nombre or settings.gemini_model,
             google_api_key=settings.google_api_key,
             temperature=TEMPERATURA,
         ),
@@ -91,46 +142,107 @@ def _crear_modelo_gemini() -> ModeloDeChat:
 
 class ClienteGemini:
     """
-    Cliente de chat de Gemini.
+    Cliente de chat de Gemini con cadena de modelos de respaldo.
 
-    Acepta un `modelo` inyectado (útil para tests con un fake que no llama a la
-    API real). Si no se pasa nada, crea el cliente real en el primer uso (lazy),
-    para que importar este módulo no requiera tener la API key configurada.
+    La cadena es `[GEMINI_MODEL] + GEMINI_MODEL_FALLBACKS`. Cada modelo se prueba con los timeouts ya
+    existentes; ante 503/504/429/404 o timeout propio se pasa al siguiente (con `gemini_backoff_s` de
+    espera, salvo tras un 404). Credenciales inválidas, errores de pedido y bugs propios se propagan sin
+    probar otro modelo. Todo el conjunto respeta `gemini_timeout_total_s`.
+
+    Para tests: `modelo` inyecta un único fake (cadena de un elemento, sin nombre salvo `nombre_modelo`);
+    `cadena` + `fabrica` (nombre -> fake) simulan varios modelos; `dormir` reemplaza time.sleep.
+    Sin nada inyectado, los modelos reales se crean en el primer uso (lazy), así importar este módulo
+    no requiere la API key.
     """
 
-    def __init__(self, modelo: ModeloDeChat | None = None):
-        self._modelo = modelo
+    def __init__(
+        self,
+        modelo: ModeloDeChat | None = None,
+        nombre_modelo: str | None = None,
+        cadena: tuple[str, ...] | list[str] | None = None,
+        fabrica: Callable[[str], ModeloDeChat] | None = None,
+        dormir: Callable[[float], None] = time.sleep,
+    ):
+        self._modelos: dict[str | None, ModeloDeChat] = {}
+        if modelo is not None:
+            self._cadena: tuple[str | None, ...] = (nombre_modelo,)
+            self._modelos[nombre_modelo] = modelo
+        else:
+            self._cadena = tuple(cadena) if cadena else settings.gemini_cadena_modelos
+        self._fabrica = fabrica or _crear_modelo_gemini
+        self._dormir = dormir
+
+    def _obtener(self, nombre: str | None) -> ModeloDeChat:
+        if nombre not in self._modelos:
+            self._modelos[nombre] = self._fabrica(nombre)
+        return self._modelos[nombre]
 
     @property
     def modelo(self) -> ModeloDeChat:
-        if self._modelo is None:
-            self._modelo = _crear_modelo_gemini()
-        return self._modelo
+        """Modelo principal (el primero de la cadena)."""
+        return self._obtener(self._cadena[0])
 
     def generar(self, prompt_sistema: str, prompt_usuario: str) -> str:
+        """Como `generar_con_detalle`, devolviendo solo el texto."""
+        return self.generar_con_detalle(prompt_sistema, prompt_usuario).texto
+
+    def generar_con_detalle(
+        self, prompt_sistema: str, prompt_usuario: str, empezar_en: str | None = None
+    ) -> ResultadoGeneracion:
         """
-        Envía los prompts al modelo y devuelve el texto de la respuesta.
+        Envía los prompts a la cadena de modelos y devuelve el texto, el modelo que respondió y los intentos.
+
+        `empezar_en` salta los modelos anteriores de la cadena (el reintento por JSON inválido sigue con
+        el modelo que ya respondió en vez de volver a probar uno que había fallado).
 
         Raises:
-            ErrorDeLLM: si falta la API key, si el proveedor falla (rate limit,
-                red, etc.), si se supera `gemini_timeout_total_s` o si la respuesta
-                viene vacía o solo con espacios.
+            ErrorDeLLM: falta la API key, error no recuperable con otro modelo (credenciales, pedido, bug),
+                respuesta vacía, presupuesto `gemini_timeout_total_s` agotado, o todos los modelos
+                fallaron (el mensaje lista cada modelo y el tipo de su error, sin claves).
         """
-        modelo = self.modelo  # se crea fuera del hilo: así una API key faltante falla en el acto
-        try:
-            texto = ejecutar_con_limite(
-                lambda: modelo.invocar(prompt_sistema, prompt_usuario),
-                settings.gemini_timeout_total_s,
-                "Gemini",
+        cadena = self._cadena
+        if empezar_en in cadena:
+            cadena = cadena[cadena.index(empezar_en):]
+        inicio = time.monotonic()
+        presupuesto = settings.gemini_timeout_total_s
+        fallos: list[tuple[str | None, str]] = []
+
+        for i, nombre in enumerate(cadena):
+            restante = presupuesto - (time.monotonic() - inicio)
+            if restante <= 0:
+                break
+            modelo = self._obtener(nombre)  # ErrorDeLLM (sin API key) sube tal cual
+            try:
+                texto = ejecutar_con_limite(
+                    lambda: modelo.invocar(prompt_sistema, prompt_usuario),
+                    min(restante, settings.gemini_timeout_s + GRACIA_S),
+                    f"Gemini {nombre or ''}".strip(),
+                )
+            except ErrorDeLLM:
+                raise
+            except Exception as e:  # noqa: BLE001 — se clasifica: cambiar de modelo o normalizar y propagar
+                motivo = _motivo_de_cambio(e)
+                if motivo is None:
+                    raise ErrorDeLLM(f"Fallo al llamar a Gemini: {e}") from e
+                fallos.append((nombre, motivo))
+                siguiente = cadena[i + 1] if i + 1 < len(cadena) else None
+                logger.warning(
+                    "paso=generacion modelo=%s intento=%d fallo=%s pasando_a=%s",
+                    nombre or "configurado", i + 1, motivo, siguiente or "ninguno",
+                )
+                if siguiente is not None and motivo != "NotFound" and settings.gemini_backoff_s > 0:
+                    espera = settings.gemini_backoff_s
+                    self._dormir(min(espera, max(0.0, presupuesto - (time.monotonic() - inicio))))
+                continue
+
+            if not isinstance(texto, str) or not texto.strip():
+                raise ErrorDeLLM("Gemini devolvió una respuesta vacía")
+            logger.info("paso=generacion modelo_usado=%s intentos=%d", nombre or "configurado", i + 1)
+            return ResultadoGeneracion(texto=texto, modelo=nombre, intentos=i + 1)
+
+        detalle = ", ".join(f"{n or 'configurado'} ({m})" for n, m in fallos) or "ninguno"
+        if time.monotonic() - inicio >= presupuesto:
+            raise ErrorDeLLM(
+                f"Gemini no respondió a tiempo: se agotó el presupuesto de {presupuesto:g}s. Intentos: {detalle}"
             )
-        except ErrorDeLLM:
-            raise
-        except TiempoAgotado as e:
-            raise ErrorDeLLM(f"Gemini no respondió a tiempo: {e}") from e
-        except Exception as e:  # noqa: BLE001 — cualquier falla del proveedor se normaliza acá
-            raise ErrorDeLLM(f"Fallo al llamar a Gemini: {e}") from e
-
-        if not isinstance(texto, str) or not texto.strip():
-            raise ErrorDeLLM("Gemini devolvió una respuesta vacía")
-
-        return texto
+        raise ErrorDeLLM(f"Gemini no respondió con ninguno de los modelos. Intentos: {detalle}")

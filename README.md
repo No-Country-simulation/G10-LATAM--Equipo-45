@@ -140,7 +140,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/adaptar \
     "documento_titulo": "Introducción a las VCN", "perfil_destinatario": "Principiante",
     "formato_salida": "Flashcards", "nombre_archivo": "manual.pdf", "fragmentos_usados": 3,
     "nicho_sector": null, "nivel_detalle": null,
-    "fecha_generacion": "2026-10-24T15:30:00Z", "modelo": "gemini-3.8-flash"
+    "fecha_generacion": "2026-10-24T15:30:00Z", "modelo": "gemini-3.5-flash"
   },
   "contenido_adaptado": [{"pregunta": "¿Qué es una VCN?", "respuesta": "..."}],
   "evaluacion_calidad": {
@@ -196,6 +196,24 @@ Smoke test manual (una sola solicitud real, gasta cuota de Gemini): `python scri
 | `OCI_CONNECT_TIMEOUT_S` / `OCI_READ_TIMEOUT_S` | 5 / 30 | conexión y lectura del cliente de OCI | fallback a disco local (`pendiente_oci`) |
 
 Reintentos de Gemini: la librería (`langchain-google-genai` 2.0.6) hace como mucho 2 intentos por llamada con espera de 1-60 s, ante cualquier error de la API (un 429 incluido); eso no es configurable. Los parámetros `timeout`/`max_retries` del constructor se ignoran en la ruta síncrona, por eso el plazo se pasa en cada llamada, junto con `retry=None` para anular el reintento del cliente gRPC (que ante un 503 insistía hasta 600 s). Además, si el modelo devuelve JSON inválido, el orquestador reintenta una vez (otra llamada).
+
+**Modelos de Gemini y respaldos.** Medido: `gemini-3.5-flash` responde en ~2 s; `gemini-3.8-flash` tarda ~37 s o falla con 503; algunos modelos listados devuelven 404 ("no longer available to new users"). Por eso la generación usa una cadena `GEMINI_MODEL` + `GEMINI_MODEL_FALLBACKS`:
+
+| Variable | Por defecto | Qué hace |
+|---|---|---|
+| `GEMINI_MODEL` | `gemini-3.5-flash` | modelo principal |
+| `GEMINI_MODEL_FALLBACKS` | `gemini-3.8-flash,gemini-3.5-flash-lite` | respaldos en orden, separados por coma; vacía = sin respaldos. Se ignoran espacios, duplicados y el prefijo `models/` |
+| `GEMINI_BACKOFF_S` | 2 | espera antes de pasar al siguiente modelo (no tras un 404) |
+
+Pasan al siguiente modelo: 503, 504/deadline, 429, 404 y el tope de reloj de la llamada (`GEMINI_TIMEOUT_S` + 5 s). No cambian de modelo: credenciales o pedido inválidos (400/401/403), bugs propios, respuesta vacía y JSON inválido (ese tiene su reintento, que sigue con el modelo que respondió). Todo respeta `GEMINI_TIMEOUT_TOTAL_S`: al agotarse no se prueban más modelos. Si fallan todos, la API responde el mismo 503 de siempre; el log lista cada modelo y el tipo de su error. `metadatos.modelo` informa el modelo que realmente respondió. Ejemplo de log:
+
+```
+2026-10-24 15:30:01 INFO    app.api.servicio: paso=generacion inicio
+2026-10-24 15:30:03 WARNING app.llm.gemini_client: paso=generacion modelo=gemini-3.5-flash intento=1 fallo=ServiceUnavailable pasando_a=gemini-3.8-flash
+2026-10-24 15:30:07 INFO    app.llm.gemini_client: paso=generacion modelo_usado=gemini-3.8-flash intentos=2
+```
+
+Nota: la librería reintenta una vez por su cuenta cada llamada (también un 404, ~2 s), antes de que se pase al siguiente modelo.
 
 **Diagnóstico.** Si una solicitud se cuelga, `python scripts/diagnostico_pasos.py [limite_chroma] [limite_embedding] [limite_oci] [limite_gemini]` prueba por separado y con cronómetro: Chroma, un embedding, subir/descargar/borrar un archivo en OCI (sin fallback local) y UNA llamada a Gemini. Imprime OK / FALLÓ / TIMEOUT con la duración de cada paso y cuál es el sospechoso. Necesita `.env` y `~/.oci/config`. Salida: 0 todo OK, 1 algún FALLÓ, 2 algún TIMEOUT.
 

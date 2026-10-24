@@ -87,7 +87,7 @@ No marcamos nada como "listo" sin un test que lo respalde — ver el análisis d
 | Excepción del proveedor (rate limit, red) se normaliza a `ErrorDeLLM` | Automatizado | Verificado | `tests/test_gemini_client.py::TestGenerar::test_excepcion_del_proveedor_se_normaliza_a_error_de_llm` |
 | Respuesta vacía o solo espacios lanza `ErrorDeLLM` | Automatizado | Verificado | `tests/test_gemini_client.py::TestGenerar::test_respuesta_vacia_o_solo_espacios_lanza_error_de_llm` |
 | Falta de `GOOGLE_API_KEY` da un error claro | Automatizado | Verificado | `tests/test_gemini_client.py::TestGenerar::test_sin_api_key_y_sin_modelo_inyectado_falla_con_mensaje_claro` |
-| Llamada real a Gemini con el modelo `gemini-3.8-flash` | Manual | Previsto | Requiere `GOOGLE_API_KEY`; probar antes de la demo |
+| Llamada real a Gemini con el modelo `gemini-3.5-flash` y, si hace falta, sus respaldos | Manual | Previsto | Requiere `GOOGLE_API_KEY`; probar antes de la demo |
 
 ### Orquestador (NM-17)
 
@@ -168,6 +168,17 @@ palabras clave, Chroma en memoria, chat guionado y cliente de OCI falso (sin red
 | Logging: configurado al importar la app, a stdout, formato con hora/nivel/nombre, idempotente, nivel por `LOG_LEVEL` | Automatizado | Verificado | `test_tiempos_y_logs.py::TestLogging` |
 | Trazas por paso con duración, orden del pipeline, tipo de excepción al fallar, sin contenido ni nombre del documento | Automatizado | Verificado | `test_tiempos_y_logs.py::TestTrazasPorPaso` |
 | Diagnóstico de dependencias reales (Chroma, embedding, OCI, 1 llamada a Gemini) con OK/FALLÓ/TIMEOUT | Manual | Previsto | `python scripts/diagnostico_pasos.py` — requiere `.env` y `~/.oci/config`; gasta 1 unidad de cuota de Gemini |
+| Cadena de modelos: el principal responde y no se construye ningún respaldo | Automatizado | Verificado | `tests/test_fallback_modelos.py::TestCadena::test_el_principal_responde_y_no_se_toca_ningun_respaldo` |
+| 503 pasa al segundo modelo con backoff; `metadatos.modelo` es el que respondió | Automatizado | Verificado | `TestCadena::test_503_pasa_al_segundo_con_backoff`, `TestMetadatosYLogs::test_metadatos_modelo_es_el_que_respondio` |
+| 404 salta de inmediato, sin backoff | Automatizado | Verificado | `TestCadena::test_404_salta_de_inmediato_sin_backoff` |
+| 429 → 504 → OK en el tercero | Automatizado | Verificado | `TestCadena::test_429_luego_504_luego_ok` |
+| Todos fallan: error con la lista de intentos (sin claves) y el mismo 503 de la API | Automatizado | Verificado | `TestCadena::test_todos_fallan_lista_cada_intento_sin_exponer_claves`, `test_todos_fallan_en_la_api_es_el_503_de_siempre` |
+| Credenciales/pedido inválido (también envuelto por LangChain) y bugs propios no prueban otros modelos | Automatizado | Verificado | `TestCadena::test_errores_de_credenciales_no_prueban_otros_modelos`, `test_error_de_credenciales_envuelto_por_langchain_tampoco_cambia_de_modelo`, `test_un_bug_propio_se_propaga_sin_cambiar_de_modelo` |
+| Presupuesto total agotado corta con el error de timeout existente; el timeout por llamada pasa al siguiente; el backoff no excede el presupuesto | Automatizado | Verificado | `TestCadena::test_presupuesto_total_agotado_corta_y_usa_el_error_de_timeout_existente`, `test_el_timeout_por_llamada_pasa_al_siguiente_modelo`, `test_el_backoff_no_supera_el_presupuesto_restante` |
+| JSON inválido usa el reintento existente con el mismo modelo (y 502 si falla dos veces); respuesta vacía no cambia de modelo | Automatizado | Verificado | `TestMetadatosYLogs::test_json_invalido_*`, `TestCadena::test_respuesta_vacia_no_cambia_de_modelo` |
+| Logs `paso=generacion modelo=… intento=… fallo=… pasando_a=…`, `modelo_usado` e intentos en el log final | Automatizado | Verificado | `TestMetadatosYLogs::test_logs_de_cada_intento_y_modelo_usado`, `test_el_ultimo_modelo_que_falla_se_loguea_sin_siguiente` |
+| Parseo de `GEMINI_MODEL_FALLBACKS` (espacios, duplicados, vacía, prefijo `models/`), defaults y `GEMINI_BACKOFF_S` | Automatizado | Verificado | `tests/test_fallback_modelos.py::TestConfig` |
+| Fallback real contra Gemini (principal caído/404 y respaldo respondiendo) | Manual | Previsto | Requiere `GOOGLE_API_KEY`; gasta cuota |
 | Smoke del endpoint con servidor, Gemini y OCI reales (1 solicitud) | Manual | Previsto | `python scripts/smoke_endpoint.py` — requiere servidor levantado y `GOOGLE_API_KEY`; gasta cuota de generación |
 | Dos solicitudes concurrentes reales contra el servidor | Manual | Previsto | Verificar que no se pisan en el vector store con Chroma persistente |
 | `nicho_sector` y `nivel_detalle` influyen en el contenido | — | Previsto | Hoy solo se devuelven en metadatos; requiere cambios en prompts/orquestador |
