@@ -29,11 +29,11 @@ flowchart LR
 
 | Herramienta | Versión sugerida | Motivo |
 |---|---|---|
-| Python | 3.11 | Estable, compatible con las librerías del stack |
+| Python | 3.10 o superior (probado con 3.11) | El código usa sintaxis de tipos `X \| Y` (PEP 604), disponible desde 3.10 |
 | FastAPI | 0.115.x | HTTP server, async-first, integra bien con Pydantic |
 | Pydantic | 2.x | Validación tipada de entrada/salida del endpoint |
 | LangChain | 0.3.x | Orquestación del pipeline RAG y de prompts |
-| ChromaDB o FAISS | última estable | Vector store para embeddings |
+| ChromaDB | última estable | Vector store para embeddings (FAISS descartado hasta que NM-02 lo confirme) |
 | langchain-google-genai | última estable | LLM y embeddings de Google Gemini |
 | Streamlit o Gradio | última estable | Interfaz interactiva de carga y visualización |
 | oci (OCI SDK for Python) | última estable | Persistencia en OCI Object Storage, capa Always Free |
@@ -45,7 +45,7 @@ flowchart LR
 # 1. Clonar y crear entorno
 git clone https://github.com/<owner>/<repo>.git
 cd <repo>
-python3.11 -m venv .venv
+python3 -m venv .venv      # Python 3.10 o superior
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
@@ -53,11 +53,20 @@ pip install -r requirements.txt
 cp .env.example .env
 # Editar .env — mínimo requerido: GOOGLE_API_KEY, OCI_* (config del bucket)
 
-# 3. Iniciar el backend
-uvicorn app.main:app --reload
+# 3. Verificar que todo funciona
+pytest -v
+```
 
-# 4. Iniciar el frontend (en otra terminal)
-streamlit run frontend/app.py
+> **Requisito:** Python 3.10 o superior. Hoy lo que funciona es instalar las dependencias y correr `pytest`.
+
+## Próximamente (aún no implementado)
+
+Estos comandos apuntan a archivos que todavía no existen en el repo (`app/main.py`, `frontend/app.py`, `scripts/ingest.py`):
+
+```bash
+uvicorn app.main:app --reload     # backend FastAPI (uvicorn es el servidor ASGI que ejecuta la app)
+streamlit run frontend/app.py     # interfaz Streamlit
+python scripts/ingest.py          # CLI de ingesta de docs/
 ```
 
 ## Contrato del endpoint principal
@@ -100,13 +109,7 @@ POST /adaptar-contenido
 
 ## Actualizar documentos de referencia
 
-```bash
-# 1. Agregar o editar archivos en docs/
-# 2. Re-ejecutar la ingesta
-python scripts/ingest.py
-# 3. Reiniciar el backend
-uvicorn app.main:app --reload
-```
+Pendiente: depende de `scripts/ingest.py` y del backend (ver "Próximamente (aún no implementado)").
 
 ## Despliegue
 

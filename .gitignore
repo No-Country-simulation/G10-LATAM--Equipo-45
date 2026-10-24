@@ -1,0 +1,27 @@
+# Entornos
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Variables de entorno (nunca commitear secretos)
+.env
+
+# Vector store local / datos generados
+data/
+*.sqlite3
+
+# OCI
+.oci/
+
+# IDE
+.vscode/
+.idea/
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
