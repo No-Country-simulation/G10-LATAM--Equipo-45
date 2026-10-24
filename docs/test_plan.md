@@ -161,6 +161,13 @@ palabras clave, Chroma en memoria, chat guionado y cliente de OCI falso (sin red
 | `ErrorDeAlmacenamiento` → 500 amable; excepción inesperada → 500 genérico sin stack ni detalles internos | Automatizado | Verificado | `test_error_de_almacenamiento_es_500_amable`, `test_excepcion_inesperada_es_500_generico_sin_detalles` |
 | Los enums del schema son los de `prompts.py`; validación del modelo de entrada; forma del error | Automatizado | Verificado | `TestEsquemas` |
 | Config del API: `max_upload_mb` y `extensiones_permitidas` | Automatizado | Verificado | `tests/test_config.py::test_limites_del_api_por_defecto`, `test_extensiones_permitidas_se_normalizan`, `test_max_upload_mb_debe_ser_positivo` |
+| Tope de reloj (`ejecutar_con_limite`): devuelve, relanza la excepción, `TiempoAgotado` si se cuelga, hilo daemon | Automatizado | Verificado | `tests/test_tiempos_y_logs.py::TestEjecutarConLimite` |
+| Gemini colgado → `ErrorDeLLM` (503 en la API); plazo y `retry=None` llegan a la llamada; un 429 falla rápido con 503 | Automatizado | Verificado | `test_tiempos_y_logs.py::TestTimeoutDeGemini` |
+| Embeddings colgados → `ErrorDeEmbeddings` (documentos y query; 503 al indexar) | Automatizado | Verificado | `test_tiempos_y_logs.py::TestTimeoutDeEmbeddings` |
+| Timeouts de OCI (read/connect) → fallback local; con disco roto, `ErrorDeAlmacenamiento`; el cliente real recibe `timeout=(conexión, lectura)` | Automatizado (fake) | Verificado | `test_tiempos_y_logs.py::TestTimeoutDeOci` |
+| Logging: configurado al importar la app, a stdout, formato con hora/nivel/nombre, idempotente, nivel por `LOG_LEVEL` | Automatizado | Verificado | `test_tiempos_y_logs.py::TestLogging` |
+| Trazas por paso con duración, orden del pipeline, tipo de excepción al fallar, sin contenido ni nombre del documento | Automatizado | Verificado | `test_tiempos_y_logs.py::TestTrazasPorPaso` |
+| Diagnóstico de dependencias reales (Chroma, embedding, OCI, 1 llamada a Gemini) con OK/FALLÓ/TIMEOUT | Manual | Previsto | `python scripts/diagnostico_pasos.py` — requiere `.env` y `~/.oci/config`; gasta 1 unidad de cuota de Gemini |
 | Smoke del endpoint con servidor, Gemini y OCI reales (1 solicitud) | Manual | Previsto | `python scripts/smoke_endpoint.py` — requiere servidor levantado y `GOOGLE_API_KEY`; gasta cuota de generación |
 | Dos solicitudes concurrentes reales contra el servidor | Manual | Previsto | Verificar que no se pisan en el vector store con Chroma persistente |
 | `nicho_sector` y `nivel_detalle` influyen en el contenido | — | Previsto | Hoy solo se devuelven en metadatos; requiere cambios en prompts/orquestador |

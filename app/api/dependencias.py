@@ -7,6 +7,7 @@ real arma el grafo de objetos una sola vez. Los tests lo reemplazan con
 `app.dependency_overrides[obtener_servicio] = lambda: servicio_falso`.
 """
 
+import logging
 import threading
 
 from app.api.servicio import ServicioDeAdaptacion
@@ -15,6 +16,9 @@ from app.llm.gemini_client import ClienteGemini
 from app.llm.orquestador import Orquestador
 from app.oci.almacenamiento import Almacenamiento
 from app.rag.vector_store import VectorStore
+from app.trazas import paso
+
+logger = logging.getLogger(__name__)
 
 _servicio: ServicioDeAdaptacion | None = None
 _candado = threading.Lock()
@@ -31,11 +35,12 @@ def obtener_servicio() -> ServicioDeAdaptacion:
     if _servicio is None:
         with _candado:
             if _servicio is None:
-                vector_store = VectorStore()
-                _servicio = ServicioDeAdaptacion(
-                    orquestador=Orquestador(vector_store, ClienteGemini()),
-                    verificador=VerificadorDeFidelidad(),
-                    almacenamiento=Almacenamiento(),
-                    vector_store=vector_store,
-                )
+                with paso(logger, "inicializar_dependencias"):
+                    vector_store = VectorStore()
+                    _servicio = ServicioDeAdaptacion(
+                        orquestador=Orquestador(vector_store, ClienteGemini()),
+                        verificador=VerificadorDeFidelidad(),
+                        almacenamiento=Almacenamiento(),
+                        vector_store=vector_store,
+                    )
     return _servicio

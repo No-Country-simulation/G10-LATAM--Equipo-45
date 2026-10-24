@@ -16,6 +16,7 @@ from typing import Protocol
 
 from app.config import settings
 from app.rag.models import Chunk
+from app.trazas import TiempoAgotado, ejecutar_con_limite
 
 logger = logging.getLogger(__name__)
 
@@ -83,10 +84,15 @@ class GeneradorDeEmbeddings:
 
         textos = [chunk.texto for chunk in chunks]
 
+        modelo = self.modelo
         try:
-            vectores = self.modelo.embed_documents(textos)
+            vectores = ejecutar_con_limite(
+                lambda: modelo.embed_documents(textos), settings.embeddings_timeout_s, "embeddings"
+            )
         except ErrorDeEmbeddings:
             raise
+        except TiempoAgotado as e:
+            raise ErrorDeEmbeddings(f"Los embeddings no respondieron a tiempo: {e}") from e
         except Exception as e:  # noqa: BLE001 — cualquier falla del proveedor se normaliza acá
             raise ErrorDeEmbeddings(f"Fallo al generar embeddings: {e}") from e
 
@@ -102,9 +108,14 @@ class GeneradorDeEmbeddings:
         if not texto or not texto.strip():
             raise ErrorDeEmbeddings("No se puede generar un embedding de una query vacía")
 
+        modelo = self.modelo
         try:
-            return self.modelo.embed_query(texto)
+            return ejecutar_con_limite(
+                lambda: modelo.embed_query(texto), settings.embeddings_timeout_s, "embedding de query"
+            )
         except ErrorDeEmbeddings:
             raise
+        except TiempoAgotado as e:
+            raise ErrorDeEmbeddings(f"El embedding de la query no respondió a tiempo: {e}") from e
         except Exception as e:  # noqa: BLE001
             raise ErrorDeEmbeddings(f"Fallo al generar embedding de query: {e}") from e

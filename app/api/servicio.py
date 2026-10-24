@@ -42,6 +42,7 @@ from app.llm.prompts import FormatoSalida
 from app.oci.almacenamiento import Almacenamiento, ResultadoSubida, sanitizar_nombre
 from app.rag.embeddings import ErrorDeEmbeddings
 from app.rag.vector_store import VectorStore
+from app.trazas import paso
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +87,17 @@ class ServicioDeAdaptacion:
         nombre_archivo = solicitud.nombre_archivo
         titulo = solicitud.documento_titulo or nombre_archivo or TITULO_POR_DEFECTO
 
+        # Solo metadatos de la solicitud: nunca el contenido ni el nombre del documento.
+        logger.info(
+            "Solicitud: perfil=%s formato=%s origen=%s",
+            solicitud.perfil_destinatario.value,
+            solicitud.formato_salida.value,
+            "archivo" if solicitud.contenido_archivo is not None else "texto",
+        )
         with tempfile.TemporaryDirectory(prefix="nuevamente_") as carpeta:
-            ruta = self._escribir_entrada(Path(carpeta), solicitud)
-            documento, subida_original = ingerir_y_subir(ruta, self._almacenamiento)
+            with paso(logger, "guardar_entrada"):
+                ruta = self._escribir_entrada(Path(carpeta), solicitud)
+            documento, subida_original = ingerir_y_subir(ruta, self._almacenamiento)  # pasos: ingesta, subida_original
 
         if subida_original is None or documento.esta_vacio:
             raise ErrorDeEntrada(
@@ -120,9 +129,10 @@ class ServicioDeAdaptacion:
 
         # El JSON subido no puede incluir su propio objeto_id: se sube con salida_json=null y recién
         # después se completa en la respuesta.
-        subida_json = self._almacenamiento.subir_json(
-            f"adaptacion-{Path(ruta.name).stem}", respuesta.model_dump(mode="json")
-        )
+        with paso(logger, "subida_json"):
+            subida_json = self._almacenamiento.subir_json(
+                f"adaptacion-{Path(ruta.name).stem}", respuesta.model_dump(mode="json")
+            )
         respuesta.almacenamiento_oci.salida_json = _a_resultado(subida_json)
 
         logger.info(
@@ -171,16 +181,18 @@ class ServicioDeAdaptacion:
             )
         finally:
             try:
-                self._vector_store.eliminar_documento(clave)
+                with paso(logger, "limpieza"):
+                    self._vector_store.eliminar_documento(clave)
             except Exception:  # noqa: BLE001 — una limpieza fallida no debe tapar la respuesta ni el error original
                 logger.exception("No se pudo eliminar el documento %s del vector store", clave)
 
     def _evaluar(self, resultado: ResultadoOrquestacion) -> EvaluacionCalidad:
         """Verifica el anclaje a la fuente; si los embeddings fallan, degrada en vez de tumbar la respuesta."""
         try:
-            fidelidad = self._verificador.verificar(
-                resultado.items, resultado.formato, resultado.fragmentos_usados
-            )
+            with paso(logger, "fidelidad"):
+                fidelidad = self._verificador.verificar(
+                    resultado.items, resultado.formato, resultado.fragmentos_usados
+                )
         except ErrorDeEmbeddings as e:
             logger.error("No se pudo verificar la fidelidad: %s", e)
             return EvaluacionCalidad(
