@@ -73,7 +73,7 @@ class ServicioDeAdaptacion:
         self._verificador = verificador
         self._almacenamiento = almacenamiento
         self._vector_store = vector_store
-        self._modelo = modelo or settings.gemini_model
+        self._modelo = modelo or settings.gemini_model  # solo si el cliente no informa cuál respondió
 
     def adaptar(self, solicitud: SolicitudAdaptacion) -> RespuestaAdaptacion:
         """
@@ -120,7 +120,7 @@ class ServicioDeAdaptacion:
                 nicho_sector=solicitud.nicho_sector,
                 nivel_detalle=solicitud.nivel_detalle,
                 fecha_generacion=datetime.now(timezone.utc),
-                modelo=self._modelo,
+                modelo=resultado.modelo_usado or self._modelo,  # el que respondió, no el configurado
             ),
             contenido_adaptado=self._dar_forma(resultado),
             evaluacion_calidad=evaluacion,
@@ -136,9 +136,12 @@ class ServicioDeAdaptacion:
         respuesta.almacenamiento_oci.salida_json = _a_resultado(subida_json)
 
         logger.info(
-            "Adaptación completada: perfil=%s formato=%s duracion=%.2fs status_upload=%s/%s baja_confianza=%s",
+            "Adaptación completada: perfil=%s formato=%s modelo_usado=%s intentos_modelo=%d duracion=%.2fs "
+            "status_upload=%s/%s baja_confianza=%s",
             resultado.perfil.value,
             resultado.formato.value,
+            resultado.modelo_usado or self._modelo,
+            resultado.intentos_modelo,
             time.perf_counter() - inicio,
             subida_original.status_upload,
             subida_json.status_upload,

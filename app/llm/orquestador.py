@@ -73,6 +73,8 @@ class ResultadoOrquestacion:
     perfil: PerfilDestinatario
     formato: FormatoSalida
     fragmentos_usados: list[ResultadoBusqueda]
+    modelo_usado: str | None = None  # modelo de Gemini que realmente respondió
+    intentos_modelo: int = 0  # intentos de generación (modelos probados, sumando el reintento por JSON inválido)
 
 
 def _extraer_json(texto: str) -> object:
@@ -175,21 +177,31 @@ class Orquestador:
         )
 
         with paso(logger, "generacion"):
-            items = self._generar_items(prompt_sistema, prompt_usuario, formato)
+            items, modelo_usado, intentos = self._generar_items(prompt_sistema, prompt_usuario, formato)
         return ResultadoOrquestacion(
-            items=items, perfil=perfil, formato=formato, fragmentos_usados=fragmentos
+            items=items, perfil=perfil, formato=formato, fragmentos_usados=fragmentos,
+            modelo_usado=modelo_usado, intentos_modelo=intentos,
         )
 
     def _generar_items(
         self, prompt_sistema: str, prompt_usuario: str, formato: FormatoSalida
-    ) -> list[dict[str, str]]:
-        """Llama a Gemini y valida el JSON; ante salida inválida reintenta UNA vez."""
+    ) -> tuple[list[dict[str, str]], str | None, int]:
+        """
+        Llama a Gemini y valida el JSON; ante salida inválida reintenta UNA vez, con el modelo que respondió.
+
+        Devuelve (ítems, modelo que respondió, intentos de modelo acumulados).
+        """
         ultimo_error: Exception | None = None
+        modelo: str | None = None
+        intentos = 0
         for intento in range(2):
             prompt = prompt_usuario if intento == 0 else prompt_usuario + _RECORDATORIO_REINTENTO
-            texto = self._cliente.generar(prompt_sistema, prompt)  # ErrorDeLLM se propaga
+            # ErrorDeLLM se propaga. El JSON inválido no cambia de modelo: el reintento sigue con el mismo.
+            generado = self._cliente.generar_con_detalle(prompt_sistema, prompt, empezar_en=modelo)
+            modelo = generado.modelo
+            intentos += generado.intentos
             try:
-                return _validar_items(_extraer_json(texto), formato)
+                return _validar_items(_extraer_json(generado.texto), formato), modelo, intentos
             except (ValueError, TypeError) as e:  # JSONDecodeError es subclase de ValueError
                 ultimo_error = e
                 logger.warning("Salida inválida de Gemini (intento %d/2): %s", intento + 1, e)
