@@ -66,9 +66,28 @@ class Settings(BaseSettings):
         description="Carpeta de fallback donde se guardan los archivos si OCI no está disponible (status pendiente_oci)",
     )
 
+    # --- API (NM-18 / NM-19) ---
+    max_upload_mb: int = Field(
+        default=10, gt=0, description="Tamaño máximo, en MB, del archivo subido o del texto pegado (si lo supera: 413)"
+    )
+    extensiones_permitidas: str = Field(
+        default=".pdf,.md,.txt",
+        description="Extensiones de archivo aceptadas por el endpoint, separadas por coma",
+    )
+
     # --- Backend ---
     app_env: Literal["dev", "test", "prod"] = Field(default="dev")
     log_level: str = Field(default="INFO")
+
+    @property
+    def max_upload_bytes(self) -> int:
+        return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def extensiones_archivo(self) -> tuple[str, ...]:
+        """`extensiones_permitidas` normalizada: minúsculas, con punto inicial y sin vacíos."""
+        extensiones = (e.strip().lower() for e in self.extensiones_permitidas.split(","))
+        return tuple(e if e.startswith(".") else f".{e}" for e in extensiones if e)
 
 
 @lru_cache

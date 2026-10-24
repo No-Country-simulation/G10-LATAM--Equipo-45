@@ -57,7 +57,7 @@ cp .env.example .env
 pytest -v
 ```
 
-> **Requisito:** Python 3.10 o superior. Hoy lo que funciona es instalar las dependencias y correr `pytest`.
+> **Requisito:** Python 3.10 o superior. Hoy se pueden instalar las dependencias, correr `pytest` y levantar la API (ver sección **API**).
 
 ## Configurar OCI Object Storage
 
@@ -92,42 +92,108 @@ Cada integrante configura sus credenciales en su propia máquina. Nada de esto s
 >
 > **macOS:** no abras el `.pem` con doble clic. Keychain Access lo interpreta como un certificado y lo agrega al llavero del sistema por error. Si necesitás ver su contenido, usá la terminal (`cat`) o un editor de texto.
 
-## Próximamente (aún no implementado)
+## API
 
-Estos comandos apuntan a archivos que todavía no existen en el repo (`app/main.py`, `frontend/app.py`, `scripts/ingest.py`):
+Backend FastAPI (NM-06, NM-18, NM-19). Los endpoints son funciones síncronas porque las librerías del pipeline (Chroma, SDK de OCI, Gemini) son bloqueantes.
 
 ```bash
-uvicorn app.main:app --reload     # backend FastAPI (uvicorn es el servidor ASGI que ejecuta la app)
+uvicorn app.api.main:app --reload     # http://127.0.0.1:8000  (documentación interactiva en /docs)
+```
+
+Importar la app no requiere claves ni red: Gemini, Chroma y OCI se inicializan en la primera solicitud real. Con `OCI_*` sin configurar, los archivos se guardan en disco y la respuesta informa `pendiente_oci`.
+
+### Endpoints
+
+- `GET /health` → `{"status": "ok"}` (no toca servicios externos).
+- `POST /api/v1/adaptar` (`multipart/form-data`):
+
+| Campo | Obligatorio | Descripción |
+|---|---|---|
+| `archivo` | uno de los dos | `.pdf`, `.md` o `.txt` (límite `MAX_UPLOAD_MB`, 10 por defecto) |
+| `documento_contenido` | uno de los dos | texto del documento; no combinar con `archivo` |
+| `perfil_destinatario` | sí | `Principiante` o `Lider Tecnico / Arquitecto` |
+| `formato_salida` | sí | `Flashcards` o `Guia Practica Paso a Paso` |
+| `documento_titulo` | no | máx. 200 caracteres; por defecto el nombre del archivo o `documento` |
+| `nicho_sector`, `nivel_detalle` | no | se aceptan y se devuelven en `metadatos`, pero **hoy no influyen en el contenido generado** |
+
+```bash
+# Con archivo
+curl -X POST http://127.0.0.1:8000/api/v1/adaptar \
+  -F "archivo=@manual.pdf" \
+  -F "perfil_destinatario=Principiante" \
+  -F "formato_salida=Flashcards"
+
+# Con texto
+curl -X POST http://127.0.0.1:8000/api/v1/adaptar \
+  -F "documento_contenido=Una VCN es una red privada dentro de OCI..." \
+  -F "documento_titulo=Introducción a las VCN" \
+  -F "perfil_destinatario=Lider Tecnico / Arquitecto" \
+  -F "formato_salida=Guia Practica Paso a Paso"
+```
+
+### Respuesta de éxito (200)
+
+```json
+{
+  "status": "ok",
+  "metadatos": {
+    "documento_titulo": "Introducción a las VCN", "perfil_destinatario": "Principiante",
+    "formato_salida": "Flashcards", "nombre_archivo": "manual.pdf", "fragmentos_usados": 3,
+    "nicho_sector": null, "nivel_detalle": null,
+    "fecha_generacion": "2026-10-24T15:30:00Z", "modelo": "gemini-3.8-flash"
+  },
+  "contenido_adaptado": [{"pregunta": "¿Qué es una VCN?", "respuesta": "..."}],
+  "evaluacion_calidad": {
+    "anclaje_fuente_score": 0.83, "baja_confianza": false, "umbral": 0.72,
+    "motivo": null, "claridad_pedagogica": null
+  },
+  "almacenamiento_oci": {
+    "documento_original": {"bucket": "nuevamente-documentos", "objeto_id": "documentos/...", "status_upload": "exito"},
+    "salida_json": {"bucket": "nuevamente-documentos", "objeto_id": "salidas/...", "status_upload": "exito"}
+  }
+}
+```
+
+- Para `Guia Practica Paso a Paso`, `contenido_adaptado` es `{"pasos": [{"titulo": "...", "detalle": "..."}]}`.
+- `anclaje_fuente_score` mide **anclaje temático** a los fragmentos recuperados, **no veracidad**: detecta contenido fuera de tema, pero un dato inventado sobre el mismo tema puede puntuar alto. Una `baja_confianza: true` es una advertencia, no bloquea la respuesta. Si no se pudo verificar, `anclaje_fuente_score` es `null` y `motivo` lo explica.
+- `claridad_pedagogica` siempre es `null` (no está implementada).
+- `status_upload` puede ser `exito`, `pendiente_oci` (guardado en disco, ver más arriba) o `error`; una caída de OCI no hace fallar la solicitud. La respuesta nunca incluye rutas del servidor (la ruta del fallback local solo se registra en el log).
+
+### Respuesta de error
+
+Todos los errores tienen la misma forma, con mensajes en español y sin detalles internos (esos van al log):
+
+```json
+{
+  "status": "error",
+  "codigo": "entrada_invalida",
+  "mensaje": "Revisá los datos enviados: hay campos con problemas.",
+  "detalles": [{"campo": "perfil_destinatario", "problema": "Valor no permitido. Valores válidos: ..."}]
+}
+```
+
+| HTTP | `codigo` | Cuándo |
+|---|---|---|
+| 422 | `entrada_invalida`, `documento_ilegible`, `documento_sin_texto` | campo inválido o faltante, ni/ambos archivo y texto, extensión no soportada, archivo vacío, PDF corrupto o escaneado sin texto |
+| 413 | `documento_demasiado_grande` | el archivo o el texto supera `MAX_UPLOAD_MB` |
+| 502 | `respuesta_invalida_del_modelo` | Gemini no devolvió un JSON válido ni tras el reintento |
+| 503 | `servicio_no_disponible` | falla de Gemini (generación o embeddings): cuota, red, clave |
+| 500 | `error_interno` | fallo de almacenamiento o cualquier error inesperado |
+
+Smoke test manual (una sola solicitud real, gasta cuota de Gemini): `python scripts/smoke_endpoint.py`.
+
+## Próximamente (aún no implementado)
+
+Estos comandos apuntan a archivos que todavía no existen en el repo (`frontend/app.py`, `scripts/ingest.py`):
+
+```bash
 streamlit run frontend/app.py     # interfaz Streamlit
 python scripts/ingest.py          # CLI de ingesta de docs/
 ```
 
 ## Contrato del endpoint principal
 
-```python
-POST /adaptar-contenido
-
-# Entrada
-{
-  "documento_titulo": "Introduccion a la Arquitectura de Redes VCN en OCI",
-  "documento_contenido": "...",
-  "perfil_destinatario": "Principiante",       # o "Lider Tecnico / Arquitecto"
-  "formato_salida": "Flashcards",              # o "Guia Practica Paso a Paso"
-  "nicho_sector": "General",
-  "nivel_detalle": "Didactico"
-}
-
-# Salida
-{
-  "status": "exito",
-  "metadatos": { "perfil_aplicado": "...", "formato_generado": "...", "conceptos_clave": [...] },
-  "contenido_adaptado": { ... },
-  "evaluacion_calidad": { "anclaje_fuente_score": 0.0, "claridad_pedagogica": "..." },
-  "almacenamiento_oci": { "bucket": "...", "objeto_id": "...", "status_upload": "..." }
-}
-```
-
-`perfil_destinatario` y `formato_salida` están limitados a los valores definidos por el equipo (ver `NM-06` en el tablero de tareas), no aceptan texto libre.
+El contrato vigente es el de la sección **API** (`POST /api/v1/adaptar`, definido en `app/api/schemas.py`). Los valores de `perfil_destinatario` y `formato_salida` están limitados a los definidos en `app/llm/prompts.py`, no aceptan texto libre.
 
 ## Checklist del MVP
 
@@ -154,7 +220,7 @@ Pendiente: depende de `scripts/ingest.py` y del backend (ver "Próximamente (aú
 ```
 nuevamente/
 ├── app/
-│   ├── main.py                   # Entry point del backend FastAPI
+│   ├── api/                      # Backend FastAPI (main, schemas, errores, servicio, dependencias)
 │   ├── config.py                 # Settings (pydantic-settings + .env)
 │   ├── ingesta/
 │   │   ├── pdf_loader.py         # Extracción de texto desde PDF (PyPDF)

@@ -133,18 +133,37 @@ orquestador ni al endpoint. Los tests usan un fake de embeddings por palabras cl
 | Re-calibración del umbral con un documento real y muchos fragmentos | Manual | Previsto | NM-30: correr con un documento real de OCI; el set actual (12 casos, 2 fragmentos) es chico |
 | Integración del verificador en `Orquestador.adaptar` / endpoint | Automatizado | Previsto | Se conecta junto con el endpoint (NM-23) |
 
-## 3. Esquema de entrada/salida (NM-06 — Pydantic, de Larissa/Jose)
+## 3. API (NM-06 esquemas, NM-18 endpoint, NM-19 errores)
 
-**Depende de que NM-06 esté cerrado.** Casos previstos, a automatizar en cuanto el
-schema exista:
+Tests con `fastapi.testclient` y `app.dependency_overrides`: `ServicioDeAdaptacion` real con embeddings por
+palabras clave, Chroma en memoria, chat guionado y cliente de OCI falso (sin red ni credenciales).
 
-| Caso | Tipo | Estado |
-|---|---|---|
-| Input válido con todos los campos requeridos | Automatizado | Previsto |
-| `perfil_destinatario` fuera del enum permitido | Automatizado | Previsto |
-| `formato_salida` fuera del enum permitido | Automatizado | Previsto |
-| Campo requerido faltante (ej. `documento_contenido`) | Automatizado | Previsto |
-| `documento_contenido` vacío o solo espacios | Automatizado | Previsto |
+| Caso | Tipo | Estado | Dónde |
+|---|---|---|---|
+| `GET /health` responde `ok` sin tocar servicios externos; 404 con el formato de error | Automatizado | Verificado | `tests/test_api.py::TestHealth` |
+| Caso feliz con Flashcards por texto: forma exacta del JSON, metadatos y evaluación de calidad | Automatizado | Verificado | `TestCaminoFeliz::test_flashcards_por_texto_forma_exacta` |
+| Caso feliz con Guía práctica por archivo (`{"pasos": [...]}`) y título por defecto | Automatizado | Verificado | `test_guia_practica_por_archivo_forma_exacta`, `test_titulo_por_defecto_en_texto_es_documento` |
+| PDF válido | Automatizado | Verificado | `TestCaminoFeliz::test_pdf_valido` |
+| Ninguna respuesta (éxito, éxito con fallback local ni error) contiene rutas del servidor ni `ruta_local` | Automatizado | Verificado | `TestSinRutasDelServidor` |
+| Se sube el original y el JSON de salida; el JSON subido no contiene su propio `objeto_id` | Automatizado | Verificado | `TestCaminoFeliz::test_sube_el_original_y_el_json_de_salida` |
+| OCI caído: `pendiente_oci` reflejado en la respuesta, sin fallar | Automatizado | Verificado | `TestAlmacenamientoYEstado::test_oci_caido_se_refleja_como_pendiente_oci_sin_fallar` |
+| El documento se elimina del vector store al terminar (también si falla la generación) | Automatizado | Verificado | `test_el_documento_se_elimina_del_vector_store_al_terminar`, `test_el_documento_se_elimina_del_vector_store_aunque_falle_la_generacion` |
+| Dos solicitudes con el mismo nombre usan claves distintas en el vector store | Automatizado | Verificado | `test_dos_solicitudes_con_el_mismo_nombre_usan_claves_distintas` |
+| `ErrorDeEmbeddings` en la fidelidad: 200 degradado (`score` null, `baja_confianza`, motivo) | Automatizado | Verificado | `TestFidelidadDegradada` |
+| Archivo y texto a la vez, o ninguno: 422 | Automatizado | Verificado | `TestValidacionDeEntrada::test_exactamente_uno_de_archivo_o_texto` |
+| Texto en blanco; texto en blanco junto a un archivo | Automatizado | Verificado | `test_texto_en_blanco_cuenta_como_ausente`, `test_texto_en_blanco_junto_a_un_archivo_usa_el_archivo` |
+| Perfil o formato fuera del enum / faltante: 422 con el campo indicado y sin eco del valor | Automatizado | Verificado | `test_valor_fuera_del_enum_indica_el_campo`, `test_campo_obligatorio_faltante` |
+| Título demasiado largo | Automatizado | Verificado | `test_titulo_demasiado_largo` |
+| Extensión no soportada; archivo vacío; no UTF-8 | Automatizado | Verificado | `test_extension_no_soportada`, `test_archivo_vacio`, `test_archivo_no_utf8` |
+| PDF corrupto y PDF escaneado sin texto: 422 (el escaneado no sube nada a OCI) | Automatizado | Verificado | `test_pdf_corrupto`, `test_pdf_escaneado_sin_texto` |
+| Archivo o texto por encima del límite: 413 | Automatizado | Verificado | `test_archivo_demasiado_grande_es_413`, `test_texto_demasiado_grande_es_413` |
+| `ErrorDeLLM` → 503; salida inválida del modelo → 502; `ErrorDeEmbeddings` al indexar → 503 (sin filtrar detalles del proveedor) | Automatizado | Verificado | `TestErroresDelPipeline` |
+| `ErrorDeAlmacenamiento` → 500 amable; excepción inesperada → 500 genérico sin stack ni detalles internos | Automatizado | Verificado | `test_error_de_almacenamiento_es_500_amable`, `test_excepcion_inesperada_es_500_generico_sin_detalles` |
+| Los enums del schema son los de `prompts.py`; validación del modelo de entrada; forma del error | Automatizado | Verificado | `TestEsquemas` |
+| Config del API: `max_upload_mb` y `extensiones_permitidas` | Automatizado | Verificado | `tests/test_config.py::test_limites_del_api_por_defecto`, `test_extensiones_permitidas_se_normalizan`, `test_max_upload_mb_debe_ser_positivo` |
+| Smoke del endpoint con servidor, Gemini y OCI reales (1 solicitud) | Manual | Previsto | `python scripts/smoke_endpoint.py` — requiere servidor levantado y `GOOGLE_API_KEY`; gasta cuota de generación |
+| Dos solicitudes concurrentes reales contra el servidor | Manual | Previsto | Verificar que no se pisan en el vector store con Chroma persistente |
+| `nicho_sector` y `nivel_detalle` influyen en el contenido | — | Previsto | Hoy solo se devuelven en metadatos; requiere cambios en prompts/orquestador |
 
 ## 4. OCI Object Storage (NM-05, NM-12, NM-22)
 
