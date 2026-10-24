@@ -125,14 +125,24 @@ schema exista:
 
 ## 4. OCI Object Storage (NM-05, NM-12, NM-22)
 
-**Depende de que el bucket (NM-05) esté creado.** Casos previstos:
+Los casos automatizados usan un cliente falso del SDK (sin red ni credenciales); el bucket real
+(NM-05) se valida aparte con el smoke test manual.
 
-| Caso | Tipo | Estado |
-|---|---|---|
-| Subida exitosa de un documento al bucket | Manual + automatizado (mock del SDK) | Previsto |
-| Falla de conexión a OCI (timeout, sin red) | Automatizado (mock) | Previsto |
-| Credenciales inválidas o config faltante | Automatizado (mock) | Previsto |
-| Fallback: el pipeline sigue funcionando en local si OCI no está configurado | Manual | Previsto — recomendado para no bloquear el resto del equipo mientras se arma el bucket |
+| Caso | Tipo | Estado | Dónde |
+|---|---|---|---|
+| Subida exitosa de un documento: `status_upload="exito"`, `objeto_id` y bucket correctos | Automatizado (fake del SDK) | Verificado | `tests/test_almacenamiento.py::TestSubidaExitosa::test_sube_a_oci_con_status_exito_y_objeto_id_correcto` |
+| Falla de conexión a OCI (timeout, sin red): fallback local, `pendiente_oci` | Automatizado (fake) | Verificado | `tests/test_almacenamiento.py::TestFallbackALocal::test_error_de_red_cae_a_local` |
+| Credenciales inválidas o sin permisos (ServiceError 401, 403, 404): fallback local | Automatizado (fake) | Verificado | `tests/test_almacenamiento.py::TestFallbackALocal::test_service_error_cae_a_local` |
+| Config faltante (variables vacías o sin `~/.oci/config`): fallback local | Automatizado | Verificado | `test_oci_sin_configurar_guarda_en_local_como_pendiente_oci`, `test_sin_cliente_inyectado_y_sin_config_de_oci_cae_a_local` |
+| Falla OCI y falla el disco: `ErrorDeAlmacenamiento` | Automatizado | Verificado | `test_falla_oci_y_falla_el_disco_lanza_error_de_almacenamiento` |
+| Nombres con `../` o ruta absoluta no escapan (OCI ni disco) | Automatizado | Verificado | `TestSanitizacionDeNombres::test_sanitizar_nombre`, `test_nombre_con_traversal_no_escapa_de_la_carpeta_local`, `test_nombre_con_ruta_absoluta_no_llega_a_la_clave_de_oci` |
+| Subida del JSON generado (dict y str) a `salidas/` (NM-22) | Automatizado | Verificado | `TestSubirJson::test_dict_se_serializa_con_tildes_legibles_y_prefijo_salidas`, `test_str_se_sube_tal_cual`, `test_json_con_oci_caido_cae_a_local` |
+| Descarga desde OCI, desde la copia local y rechazo de `objeto_id` malicioso | Automatizado | Verificado | `TestDescargar::test_descarga_desde_oci`, `test_descarga_la_copia_local_si_el_objeto_quedo_pendiente`, `test_objeto_inexistente_lanza_error_de_almacenamiento`, `test_objeto_id_malicioso_se_rechaza` |
+| `ingerir_y_subir`: PDF válido sube el original | Automatizado | Verificado | `tests/test_subida.py::test_pdf_valido_se_ingiere_y_se_sube_el_original` |
+| `ingerir_y_subir`: PDF corrupto o extensión no soportada no sube | Automatizado | Verificado | `tests/test_subida.py::test_pdf_corrupto_lanza_error_de_ingesta_y_no_sube`, `test_extension_no_soportada_no_sube` |
+| `ingerir_y_subir`: PDF escaneado sin texto no sube | Automatizado | Verificado | `tests/test_subida.py::test_pdf_escaneado_sin_texto_no_sube` |
+| Subida real de un documento al bucket desde el pipeline | Manual | Previsto | Probar con credenciales reales antes de la demo |
+| Script de reconciliación (subir lo `pendiente_oci`) | — | Previsto | Deuda: no implementado todavía |
 | Smoke test contra el bucket real (NM-05): validar config, subir, descargar y comparar, listar y borrar `smoke/<timestamp>.txt` | Manual | Verificado — `python scripts/smoke_oci.py`, corrido el 2026-10-20 contra el bucket `nuevamente-documentos`: TODO OK (subida, descarga, listado y borrado). Requiere bucket, política IAM y `~/.oci/config` |
 
 ## 5. Manual vs. automatizado — criterio general
