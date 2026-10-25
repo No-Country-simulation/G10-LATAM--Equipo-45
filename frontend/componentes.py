@@ -118,7 +118,10 @@ def bloque_json(respuesta: dict) -> str:
 def tarjeta_error(mensaje: str, detalles: list[dict]) -> str:
     html = f'<div class="nm-error" role="alert"><p>{escape(mensaje)}</p>'
     lineas = []
+    principal = mensaje.strip().casefold()
     for d in detalles:
+        if str(d.get("problema", "")).strip().casefold() == principal:
+            continue  # repite el mensaje principal: no aporta nada y muestra el nombre técnico del campo
         campo, problema = escape(d.get("campo", "")), escape(d.get("problema", ""))
         lineas.append(f"<li>{campo + ': ' if campo else ''}{problema}</li>")
     if lineas:

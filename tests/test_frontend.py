@@ -496,6 +496,29 @@ class TestComponentes:
         html = componentes.tarjeta_error("Revisá los datos", [{"campo": "archivo", "problema": "Vacío"}])
         assert "Revisá los datos" in html and "<li>archivo: Vacío</li>" in html
 
+    def test_error_con_detalle_igual_al_mensaje_no_muestra_lista(self):
+        html = componentes.tarjeta_error("Documento sin texto.", [{"campo": "archivo", "problema": "  documento SIN texto. "}])
+        assert "Documento sin texto." in html and "<ul>" not in html and "archivo" not in html
+
+    def test_error_con_detalle_distinto_al_mensaje_muestra_lista(self):
+        html = componentes.tarjeta_error("Revisá los datos", [{"campo": "archivo", "problema": "Vacío"}])
+        assert "<ul>" in html and "<li>archivo: Vacío</li>" in html
+
+    def test_error_con_varios_detalles_solo_muestra_los_distintos(self):
+        html = componentes.tarjeta_error(
+            "Revisá los datos",
+            [
+                {"campo": "a", "problema": "Revisá los datos"},
+                {"campo": "b", "problema": "Vacío"},
+                {"campo": "c", "problema": "revisá los datos "},
+            ],
+        )
+        assert html.count("<li>") == 1 and "<li>b: Vacío</li>" in html and "a:" not in html and "c:" not in html
+
+    def test_error_sin_detalles_no_muestra_lista(self):
+        html = componentes.tarjeta_error("Algo falló", [])
+        assert "Algo falló" in html and "<ul>" not in html
+
     def test_el_encabezado_no_trae_la_pildora_maqueta(self):
         html = componentes.encabezado()
         assert "<h1>NuevaMente - Adaptación de contenido educativo</h1>" in html
