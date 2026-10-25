@@ -42,19 +42,22 @@ def estado_vacio() -> str:
     )
 
 
-def tarjeta_score(calidad: dict) -> str:
+def tarjeta_score(calidad: dict, umbral_usuario: float | None = None) -> str:
+    """`umbral_usuario`: el que eligió la persona con el slider; si difiere del oficial, mueve la marca y la frase."""
     score = calidad.get("anclaje_fuente_score")
     barra = formato.porcentaje_barra(score)
     baja = bool(calidad.get("baja_confianza"))
     clave, texto_estado = formato.estado_confianza(baja)
-    umbral = calidad.get("umbral")
+    oficial = calidad.get("umbral")
+    propio = umbral_usuario is not None and formato.porcentaje_barra(oficial) is not None and abs(umbral_usuario - oficial) >= 0.005
+    umbral = umbral_usuario if propio else oficial
     marca = formato.posicion_umbral(umbral)
 
     if barra is None:
         valor = f'<span class="nm-score-nd">{formato.MENSAJE_SCORE_NO_DISPONIBLE}</span>'
     else:
         valor = f'<span class="nm-score-valor nm-mono">{formato.texto_score(score)}</span>'
-    comparacion = formato.comparacion_umbral(score, umbral)
+    comparacion = formato.comparacion_umbral(score, umbral, propio=propio)
     frase = f'<div class="nm-comparacion nm-comparacion-{comparacion[0]}">{comparacion[1]}</div>' if comparacion else ""
 
     # Sin score y sin baja confianza no hay estado que informar: la píldora diría "normal" sin haber medido nada.
@@ -79,7 +82,7 @@ def tarjeta_score(calidad: dict) -> str:
             html += (
                 f'<div class="nm-marca" style="left:{marca}%"></div>'
                 f'<div class="nm-marca-etiqueta" style="left:{formato.posicion_etiqueta_umbral(umbral)}%">'
-                f"Umbral {formato.texto_umbral(umbral)}</div>"
+                f"{'Tu umbral' if propio else 'Umbral'} {formato.texto_umbral(umbral)}</div>"
             )
         html += "</div>"
     elif calidad.get("motivo"):
@@ -94,7 +97,10 @@ def titulo_contenido(respuesta: dict) -> str:
     meta = respuesta.get("metadatos") or {}
     formato_ui = formato.etiqueta_de(formato.FORMATOS, meta.get("formato_salida"))
     perfil_ui = formato.etiqueta_de(formato.PERFILES, meta.get("perfil_destinatario"))
-    return f'<p class="nm-titulo-contenido">{escape(formato_ui)} · {escape(perfil_ui)}</p>'
+    return (
+        f'<p class="nm-titulo-contenido">{escape(formato_ui)} · {escape(perfil_ui)} '
+        '<span class="nm-chip-ok">Completado</span></p>'
+    )
 
 
 def item(etiqueta: str, numero: int, titulo: str) -> str:
