@@ -63,6 +63,10 @@ header[data-testid="stHeader"] { background: transparent; }
 }
 .nm-titulo-tarjeta { font-weight: 600; font-size: 15px; color: var(--nm-texto); margin: 0 0 4px 0; }
 .nm-titulo-contenido { font-weight: 600; font-size: 17px; color: var(--nm-texto); margin: 0; padding-top: 8px; }
+.nm-chip-ok {
+  display: inline-block; white-space: nowrap; margin-left: 6px; padding: 2px 10px; border-radius: 999px; vertical-align: middle;
+  background: #F4F4C6; color: #3F3F00; font-size: 12px; font-weight: 600; line-height: 1.5;
+}
 .nm-contador { font-size: 13px; color: var(--nm-texto-2); margin: 2px 0 0 0; }
 .nm-etiqueta {
   font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
@@ -141,6 +145,7 @@ div[data-baseweb="textarea"]:focus-within, div[data-baseweb="input"]:focus-withi
   min-height: 44px; border-radius: 10px; border: 2px solid var(--nm-borde-campo);
   background: #FFFFFF; color: var(--nm-texto); font-weight: 600;
 }
+.stApp button[data-testid="stBaseButton-secondary"] p { font-size: 14px; font-weight: 600; }
 
 /* --- Selector segmentado (solo la vista legible / JSON) --- */
 [data-testid="stButtonGroup"] { gap: 8px; flex-wrap: wrap; }
@@ -234,12 +239,17 @@ div[data-baseweb="textarea"]:focus-within, div[data-baseweb="input"]:focus-withi
 [class*="st-key-nm-card"] [data-testid="stMarkdownContainer"] { max-width: 100%; min-width: 0; }
 /* Streamlit resta 16px al final de todo st.markdown (para compensar el margen del último <p>); en la tarjeta de score
    el último elemento ya no lleva margen, y esa resta dejaba solo ~5px de padding inferior. */
-.st-key-nm-card-score [data-testid="stMarkdownContainer"] { margin-bottom: 0; }
+.st-key-nm-card-score [data-testid="stMarkdownContainer"]:has(> .nm-score) { margin-bottom: 0; }
+.st-key-nm-card-score [data-testid="stExpander"] { margin-top: 8px; }
+.st-key-nm-card-score [data-testid="stExpanderDetails"] p { font-size: 14px; line-height: 1.6; color: var(--nm-texto-3); }
+.st-key-nm-card-score [data-testid="stSlider"] { padding-top: 4px; }
+.st-key-nm-card-score [data-testid="stCaptionContainer"] p { font-size: 13px; color: var(--nm-texto-2); line-height: 1.6; }
+.st-key-nm-card-score [data-baseweb="slider"] [role="slider"]:focus-visible { outline: 3px solid var(--nm-magenta); outline-offset: 2px; }
 [class*="st-key-nm-card"] > div, [class*="st-key-nm-item"] > div,
 [class*="st-key-nm-card"] [data-testid="stElementContainer"], [class*="st-key-nm-item"] [data-testid="stElementContainer"],
 [class*="st-key-nm-card"] [data-testid="stFileUploader"], [class*="st-key-nm-card"] [data-testid="stTextInput"],
 [class*="st-key-nm-card"] [data-testid="stTextArea"], [class*="st-key-nm-card"] [data-testid="stButton"],
-[class*="st-key-nm-card"] [data-testid="stDownloadButton"], [class*="st-key-nm-card"] [data-testid="stSelectbox"], [class*="st-key-nm-card"] [data-testid="stExpander"] {
+[class*="st-key-nm-card"] [data-testid="stDownloadButton"], [class*="st-key-nm-card"] [data-testid="stSlider"], [class*="st-key-nm-card"] [data-testid="stSelectbox"], [class*="st-key-nm-card"] [data-testid="stExpander"] {
   width: 100% !important; max-width: 100%; min-width: 0;
 }
 [class*="st-key-nm-card"] [data-testid="stFileUploaderDropzone"], [class*="st-key-nm-card"] div[data-baseweb="textarea"],

@@ -2,7 +2,11 @@
 NM-25 / NM-26 — Lógica pura de la interfaz (sin Streamlit): opciones, validación previa y formateo del resultado.
 """
 
+import csv
+import io
 import json
+import re
+import unicodedata
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -123,11 +127,17 @@ def json_formateado(respuesta: dict) -> str:
     return json.dumps(respuesta, ensure_ascii=False, indent=2)
 
 
-def nombre_descarga(respuesta: dict) -> str:
-    """Nombre de archivo seguro para el JSON descargado, derivado del título del documento."""
-    titulo = str((respuesta.get("metadatos") or {}).get("documento_titulo") or "resultado")
-    limpio = "".join(c if c.isalnum() else "_" for c in titulo).strip("_")[:50] or "resultado"
-    return f"nuevamente_{limpio}.json"
+def slug_titulo(titulo, maximo: int = 60) -> str:
+    """Título saneado para un nombre de archivo: solo letras (sin tildes), números y guiones."""
+    ascii_ = unicodedata.normalize("NFKD", str(titulo or "")).encode("ascii", "ignore").decode("ascii")
+    limpio = re.sub(r"[^A-Za-z0-9]+", "-", ascii_).strip("-")[:maximo].strip("-")
+    return limpio or "resultado"
+
+
+def nombre_descarga(respuesta: dict, extension: str = "json") -> str:
+    """'nuevamente-<título saneado>.<extensión>' para cualquiera de las descargas."""
+    titulo = (respuesta.get("metadatos") or {}).get("documento_titulo")
+    return f"nuevamente-{slug_titulo(titulo)}.{extension}"
 
 
 def porcentaje_barra(score) -> float | None:
@@ -176,13 +186,107 @@ def posicion_etiqueta_umbral(umbral, minimo: float = 12.0, maximo: float = 88.0)
     return min(max(posicion, minimo), maximo)
 
 
-def comparacion_umbral(score, umbral) -> tuple[str, str] | None:
+def comparacion_umbral(score, umbral, propio: bool = False) -> tuple[str, str] | None:
     """
     (estado, frase) de comparar el score con el umbral, o None si falta alguno de los dos.
-    Un score igual al umbral cuenta como que lo supera.
+    Un score igual al umbral cuenta como que lo supera. Con `propio` el umbral es el que eligió la persona
+    con el slider, no el oficial de la API.
     """
     if porcentaje_barra(score) is None or porcentaje_barra(umbral) is None:
         return None
-    if score >= umbral:
-        return "supera", f"Supera el umbral mínimo ({texto_umbral(umbral)})"
-    return "debajo", f"Queda por debajo del umbral mínimo ({texto_umbral(umbral)})"
+    supera = score >= umbral
+    estado = "supera" if supera else "debajo"
+    if propio:
+        return estado, f"Con tu umbral ({texto_umbral(umbral)}): " + ("lo supera" if supera else "queda por debajo")
+    if supera:
+        return estado, f"Supera el umbral mínimo ({texto_umbral(umbral)})"
+    return estado, f"Queda por debajo del umbral mínimo ({texto_umbral(umbral)})"
+
+# --------------------------------------------------------------------------------------
+# Explicación de la nota, slider de umbral, descargas y tiempo
+# --------------------------------------------------------------------------------------
+
+SLIDER_MIN, SLIDER_MAX, SLIDER_PASO = 0.50, 0.95, 0.01
+
+
+def unidades_de(contenido) -> int:
+    """Cantidad de unidades del contenido generado: flashcards o pasos de la guía."""
+    return len(items_guia(contenido)) if es_guia(contenido) else len(items_flashcards(contenido))
+
+
+def _plural(n: int, singular: str, plural: str) -> str:
+    return f"{n} {singular if n == 1 else plural}"
+
+
+def explicacion_nota(calidad: dict, unidades: int, fragmentos) -> list[str]:
+    """
+    Párrafos (markdown) del desplegable "¿Por qué esta nota?". La nota mide anclaje temático: nunca se presenta como
+    porcentaje de verdad ni de aciertos.
+    """
+    baja = bool(calidad.get("baja_confianza"))
+    if porcentaje_barra(calidad.get("anclaje_fuente_score")) is None:
+        parrafos = [
+            "Esta vez no se pudo calcular la nota. Puede pasar, por ejemplo, si falla el servicio de embeddings, que es el "
+            "que permite comparar el contenido con el documento. El resultado se devuelve igual, pero sin nota: "
+            "revisalo contra la fuente."
+        ]
+    else:
+        parrafos = [
+            "El contenido generado se divide en unidades (cada flashcard o cada paso). Cada unidad se compara con los "
+            "fragmentos del documento que el sistema recuperó, y se toma la similitud más alta. La nota es el promedio "
+            "de esas similitudes."
+        ]
+        if isinstance(fragmentos, int) and not isinstance(fragmentos, bool) and fragmentos > 0 and unidades > 0:
+            parrafos.append(
+                f"En este resultado se compararon {_plural(unidades, 'unidad', 'unidades')} contra "
+                f"{_plural(fragmentos, 'fragmento', 'fragmentos')} del documento."
+            )
+        parrafos.append(
+            "Una nota cercana a 1 indica que el contenido trata los mismos temas que el documento. Mide anclaje "
+            "temático: **no verifica** que cada dato sea verdadero. Revisá siempre contra la fuente."
+        )
+    if baja:
+        parrafos.append(
+            "La nota quedó por debajo del umbral, así que conviene que una persona revise el contenido antes de usarlo."
+        )
+    return parrafos
+
+
+def umbral_para_slider(umbral) -> float | None:
+    """Valor inicial del slider: el umbral oficial a dos decimales, dentro del rango del slider. None si no hay umbral."""
+    if porcentaje_barra(umbral) is None:
+        return None
+    return round(min(max(float(umbral), SLIDER_MIN), SLIDER_MAX), 2)
+
+
+def _celda_segura(valor) -> str:
+    """Evita la inyección de fórmulas en hojas de cálculo: una celda que empieza con = + - @ (o tab / CR) lleva un apóstrofo."""
+    texto = str(valor)
+    return "'" + texto if texto[:1] in ("=", "+", "-", "@", "\t", "\r") else texto
+
+
+def csv_flashcards(tarjetas: list[tuple[str, str]]) -> str:
+    """CSV de dos columnas (pregunta, respuesta), sin encabezado, para importar en Anki. Lo escapa el módulo csv."""
+    salida = io.StringIO()
+    escritor = csv.writer(salida, lineterminator="\n")
+    for pregunta, respuesta in tarjetas:
+        escritor.writerow([_celda_segura(pregunta), _celda_segura(respuesta)])
+    return salida.getvalue()
+
+
+def markdown_guia(titulo, pasos: list[tuple[str, str]]) -> str:
+    """Guía en Markdown: título del documento y un encabezado por paso numerado, con su detalle."""
+    def una_linea(texto) -> str:
+        return " ".join(str(texto or "").split())
+
+    lineas = [f"# {una_linea(titulo) or 'Guía práctica'}", ""]
+    for numero, (paso, detalle) in enumerate(pasos, start=1):
+        lineas += [f"## {numero}. {una_linea(paso)}", "", str(detalle).strip(), ""]
+    return "\n".join(lineas).rstrip("\n") + "\n"
+
+
+def texto_duracion(segundos) -> str:
+    """'12,3 s', o 'No disponible' si no hay medición."""
+    if isinstance(segundos, bool) or not isinstance(segundos, (int, float)) or segundos < 0:
+        return "No disponible"
+    return f"{segundos:.1f}".replace(".", ",") + " s"
