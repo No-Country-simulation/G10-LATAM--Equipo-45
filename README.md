@@ -1,72 +1,147 @@
-# G10-LATAM--Equipo-45
-Sistema inteligente de adaptación y generación de contenido educativo con RAG y Gemini — Hackathon ONE G10-LATAM.
 # NuevaMente
 
-Sistema inteligente que ingiere documentación técnica (PDF, Markdown o texto) y la transforma automáticamente en contenido educativo personalizado, usando RAG (Retrieval-Augmented Generation) para anclar el contenido en las fuentes originales y evitar alucinaciones.
+Convierte documentación técnica extensa en material educativo adaptado a un perfil y a un formato, anclado a la fuente original (RAG + Gemini).
 
-Construido para el Hackathon ONE G10-LATAM (Oracle Next Education & Alura).
+Proyecto del equipo 45 (G10-LATAM) — Hackathon ONE G10-LATAM (Oracle Next Education & Alura).
 
-## Qué resuelve
+## Índice
 
-Adaptar documentación técnica densa a distintos públicos —desde alguien en transición de carrera hasta un líder técnico— es un proceso manual que consume semanas de trabajo de especialistas instruccionales. NuevaMente automatiza ese flujo: recibe un documento técnico, un perfil de destinatario y un formato pedagógico de salida, y devuelve contenido educativo estructurado y fiel a la fuente original.
+1. [Descripción](#1-descripción)
+2. [Características principales](#2-características-principales)
+3. [Arquitectura y tecnologías](#3-arquitectura-y-tecnologías)
+4. [Instalación y ejecución](#4-instalación-y-ejecución)
+5. [Uso de la API](#5-uso-de-la-api)
+6. [Calidad y pruebas](#6-calidad-y-pruebas)
+7. [Limitaciones conocidas](#7-limitaciones-conocidas)
+8. [Próximos pasos](#8-próximos-pasos)
+9. [Estructura del proyecto](#9-estructura-del-proyecto)
+10. [Equipo](#10-equipo)
+11. [Cumplimiento de requisitos](#11-cumplimiento-de-requisitos)
+12. [Recursos opcionales cubiertos](#12-recursos-opcionales-cubiertos)
 
-## Arquitectura
+Documentación técnica complementaria:
+
+- [docs/arquitectura.md](docs/arquitectura.md) — flujo RAG paso por paso, parámetros y decisiones por capa.
+- [docs/fidelidad.md](docs/fidelidad.md) — cómo se calcula el puntaje de fidelidad, qué mide y qué no.
+- [docs/fallback.md](docs/fallback.md) — cadena de modelos de Gemini, errores que disparan el respaldo y tiempos.
+- [docs/test_plan.md](docs/test_plan.md) — plan de pruebas (casos automatizados y manuales).
+
+## 1. Descripción
+
+**Problema.** La documentación técnica (manuales, guías de arquitectura, referencias) suele ser larga y densa: cuesta asimilarla, y adaptarla a otra audiencia es un trabajo manual que consume tiempo de especialistas.
+
+**Solución.** NuevaMente recibe un documento (PDF, Markdown o texto), un perfil de destinatario y un formato de salida, y devuelve material educativo estructurado generado a partir de los fragmentos más relevantes del propio documento. Además calcula un puntaje de fidelidad que indica qué tan anclado a la fuente está lo generado.
+
+**Valor.** Menos tiempo para preparar material de estudio, contenido adaptado al nivel de quien lo lee y una señal explícita de cuándo conviene revisarlo.
+
+**Público objetivo.** Quienes necesitan estudiar o enseñar a partir de documentación técnica: personas en transición de carrera hacia tecnología (perfil *Principiante*) y líderes técnicos o arquitectos que quieren ir directo a las decisiones de diseño (perfil *Líder técnico / Arquitecto*).
+
+## 2. Características principales
+
+- **2 perfiles × 2 formatos.** Perfiles: `Principiante` y `Lider Tecnico / Arquitecto`. Formatos: `Flashcards` y `Guia Practica Paso a Paso`.
+- **RAG con ChromaDB** y embeddings `gemini-embedding-001`: el documento se divide en fragmentos, se indexa y se recuperan los más relevantes para armar el prompt.
+- **Validación de entrada** antes de llamar al LLM: campos, extensión, tamaño (413), archivo vacío, PDF ilegible o sin texto, texto sin contenido útil o demasiado corto (422).
+- **Cadena de modelos con fallback**: si el modelo principal falla por alta demanda, timeout, cuota o modelo no disponible, se prueba el siguiente ([docs/fallback.md](docs/fallback.md)).
+- **Evaluación de fidelidad** por similitud de embeddings, con umbral (0.72 por defecto) y aviso de baja confianza que no bloquea la respuesta ([docs/fidelidad.md](docs/fidelidad.md)).
+- **Almacenamiento en OCI Object Storage** del documento original y del resultado JSON, con fallback a disco local (`pendiente_oci`) si OCI no está disponible.
+- **Descargas**: CSV compatible con Anki (flashcards), Markdown (guías) y JSON.
+- **Interfaz Streamlit** con texto de ejemplo, umbral de revisión configurable (slider que solo cambia cómo se lee el resultado) y desplegable de detalles de la generación (modelo, fragmentos, fecha, tiempo, estado de OCI).
+
+## 3. Arquitectura y tecnologías
 
 ```mermaid
 flowchart LR
-  A[Usuario] --> B[Frontend<br/>Streamlit o Gradio]
-  B --> C[Backend/API<br/>FastAPI o Flask]
-  C --> D[Ingesta de documentos<br/>PyPDF, Markdown, texto]
-  D --> E[Pipeline RAG<br/>chunking, embeddings, vector store]
-  C --> F[Orquestacion LLM<br/>LangChain + Gemini]
-  E --> F
-  F --> G[Verificacion de fidelidad]
-  G --> C
-  C --> H[OCI Object Storage<br/>Always Free]
+  U["Usuario<br/>Streamlit"] -->|"POST /api/v1/adaptar"| A["API FastAPI"]
+  A --> V{"Validación de la solicitud<br/>campos, extensión, tamaño"}
+  V -->|"422 / 413"| E["Error claro<br/>sin llamar al LLM"]
+  V -->|"válida"| I["Ingesta<br/>PDF / MD / TXT"]
+  I --> VC{"Contenido útil<br/>letras y largo mínimo"}
+  VC -->|"422"| E
+  VC -->|"válido"| O1[("OCI Object Storage<br/>documento original")]
+  O1 --> C["Chunking<br/>800 + overlap 120"]
+  C --> EM["Embeddings<br/>gemini-embedding-001"]
+  EM --> DB[("ChromaDB")]
+  DB --> R["Recuperación top_k=8"]
+  R --> P["Prompt por perfil x formato"]
+  P --> G["Gemini<br/>cadena de modelos con fallback"]
+  G --> J["Validación del JSON<br/>1 reintento si es inválido"]
+  J --> F["Fidelidad<br/>similitud coseno, umbral 0.72"]
+  F --> O2[("OCI Object Storage<br/>resultado JSON")]
+  O2 --> RESP["Respuesta<br/>contenido + puntaje + metadatos"]
+  RESP --> U
 ```
 
-## Stack
+El detalle de cada paso está en [docs/arquitectura.md](docs/arquitectura.md).
 
-| Herramienta | Versión sugerida | Motivo |
+**Tecnologías** (versiones de [requirements.txt](requirements.txt); el intérprete es el usado en el desarrollo):
+
+| Componente | Versión | Uso |
 |---|---|---|
-| Python | 3.10 o superior (probado con 3.11) | El código usa sintaxis de tipos `X \| Y` (PEP 604), disponible desde 3.10 |
-| FastAPI | 0.115.x | HTTP server, async-first, integra bien con Pydantic |
-| Pydantic | 2.x | Validación tipada de entrada/salida del endpoint |
-| LangChain | 0.3.x | Orquestación del pipeline RAG y de prompts |
-| ChromaDB | última estable | Vector store para embeddings (FAISS descartado hasta que NM-02 lo confirme) |
-| langchain-google-genai | última estable | LLM y embeddings de Google Gemini |
-| Streamlit o Gradio | última estable | Interfaz interactiva de carga y visualización |
-| oci (OCI SDK for Python) | última estable | Persistencia en OCI Object Storage, capa Always Free |
-| PyPDF | última estable | Extracción de texto desde archivos PDF |
+| Python | 3.10 o superior (probado con 3.11.10) | El código usa tipos `X \| Y` (PEP 604) |
+| FastAPI | 0.115.6 | API HTTP (`uvicorn[standard]` 0.32.1, `python-multipart` 0.0.20) |
+| Pydantic / pydantic-settings | 2.10.3 / 2.6.1 | Esquemas del endpoint y configuración desde `.env` |
+| Streamlit | 1.40.2 | Interfaz (cliente HTTP con `httpx` 0.27.2) |
+| ChromaDB | 0.5.23 | Vector store persistente, métrica coseno |
+| langchain-google-genai | 2.0.6 | Acceso a Gemini (chat y embeddings) |
+| Gemini | `gemini-3.5-flash` (principal), respaldos `gemini-3.8-flash` y `gemini-3.5-flash-lite`; embeddings `gemini-embedding-001` | Valores por defecto de [.env.example](.env.example) |
+| OCI SDK (`oci`) | 2.143.1 | Object Storage (capa Always Free) |
+| pypdf | 5.1.0 | Extracción de texto de PDF |
+| pytest / pytest-mock / reportlab | 8.3.3 / 3.14.0 / 5.0.1 | Pruebas |
 
-## Quickstart
+`langchain`, `langchain-chroma` y `langchain-community` figuran en `requirements.txt` como previstos, pero el código actual no los importa: la orquestación está implementada en `app/llm/orquestador.py`.
+
+## 4. Instalación y ejecución
+
+Requisito: Python 3.10 o superior.
 
 ```bash
-# 1. Clonar y crear entorno
-git clone https://github.com/<owner>/<repo>.git
-cd <repo>
-python3 -m venv .venv      # Python 3.10 o superior
+# 1. Entorno
+git clone https://github.com/No-Country-simulation/G10-LATAM--Equipo-45.git
+cd G10-LATAM--Equipo-45
+python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# 2. Configurar variables de entorno
+# 2. Variables de entorno
 cp .env.example .env
-# Editar .env — mínimo requerido: GOOGLE_API_KEY, OCI_* (config del bucket)
+# Completar al menos GOOGLE_API_KEY y las variables OCI_* (ver "Configurar OCI Object Storage")
 
-# 3. Verificar que todo funciona
-pytest -v
+# 3. Backend (terminal 1) — http://127.0.0.1:8000, documentación interactiva en /docs
+uvicorn app.api.main:app --reload
+
+# 4. Frontend (terminal 2) — http://localhost:8501
+streamlit run frontend/app.py
+
+# 5. Pruebas (518 tests, sin red ni credenciales)
+pytest -q
 ```
 
-> **Requisito:** Python 3.10 o superior. Hoy se pueden instalar las dependencias, correr `pytest`, levantar la API (sección **API**) y el frontend (sección **Frontend**).
+Importar la app no requiere claves ni red: Gemini, Chroma y OCI se inicializan en la primera solicitud real. Sin `OCI_*` configuradas, los archivos se guardan en disco y la respuesta informa `pendiente_oci`.
 
-## Configurar OCI Object Storage
+### Variables de entorno
 
-Cada integrante configura sus credenciales en su propia máquina. Nada de esto se sube al repo.
+Todas están documentadas en [.env.example](.env.example). Las más relevantes:
 
-1. **Crear el bucket** (consola de OCI → Storage → Buckets): nombre `nuevamente-documentos`, tier Standard, acceso privado. Anotá el *namespace* que muestra la consola en el detalle del bucket.
-2. **Permisos**: una política IAM que le dé al grupo `nuevamente-backend` acceso a los objetos del bucket, y tu usuario dentro de ese grupo.
-3. **Generar la API key** (Perfil → tu usuario → API keys → Add API key → Generate API key pair). Descargá la clave privada (`.pem`), guardala en `~/.oci/` y restringí permisos: `chmod 600 ~/.oci/<tu_clave>.pem`. La consola te muestra un bloque de configuración: copialo.
-4. **Crear `~/.oci/config`** pegando ese bloque y ajustando `key_file` a la ruta real del `.pem`:
+| Variable | Por defecto | Qué hace |
+|---|---|---|
+| `GOOGLE_API_KEY` | — | Clave de Gemini (obligatoria para generar) |
+| `GEMINI_MODEL`, `GEMINI_MODEL_FALLBACKS`, `GEMINI_BACKOFF_S` | `gemini-3.5-flash`, `gemini-3.8-flash,gemini-3.5-flash-lite`, 2 | Cadena de modelos ([docs/fallback.md](docs/fallback.md)) |
+| `GEMINI_TIMEOUT_S`, `GEMINI_TIMEOUT_TOTAL_S`, `EMBEDDINGS_TIMEOUT_S` | 45, 100, 60 | Tiempos máximos (segundos) |
+| `CHUNK_SIZE`, `CHUNK_OVERLAP`, `TOP_K_RECUPERACION` | 800, 120, 8 | Parámetros del RAG |
+| `UMBRAL_ANCLAJE` | 0.72 | Umbral de baja confianza |
+| `MAX_UPLOAD_MB`, `EXTENSIONES_PERMITIDAS`, `MIN_CHARS_DOCUMENTO` | 10, `.pdf,.md,.txt`, 200 | Validación de entrada |
+| `OCI_BUCKET_NAME`, `OCI_NAMESPACE`, `OCI_REGION`, `OCI_CONFIG_PROFILE` | —, —, `sa-saopaulo-1`, `DEFAULT` | Bucket de OCI |
+| `LOG_LEVEL` | `INFO` | Nivel de log |
+| `API_BASE_URL`, `API_TIMEOUT_S`, `APP_TIMEZONE` | `http://127.0.0.1:8000`, 150, `America/Asuncion` | Frontend (lee el mismo `.env`) |
+
+### Configurar OCI Object Storage
+
+Cada integrante configura sus credenciales en su propia máquina; nada de esto se sube al repo.
+
+1. **Crear el bucket** (consola de OCI → Storage → Buckets): nombre `nuevamente-documentos`, tier Standard, acceso privado. Anotá el *namespace* que muestra la consola.
+2. **Permisos**: una política IAM que le dé al grupo `nuevamente-backend` acceso a los objetos del bucket, con tu usuario dentro del grupo.
+3. **API key** (Perfil → tu usuario → API keys → Add API key → Generate API key pair). Guardá la clave privada (`.pem`) en `~/.oci/` y ejecutá `chmod 600 ~/.oci/<tu_clave>.pem`. La consola muestra un bloque de configuración: copialo.
+4. **Crear `~/.oci/config`** con ese bloque, ajustando `key_file`:
 
    ```ini
    [DEFAULT]
@@ -77,8 +152,8 @@ Cada integrante configura sus credenciales en su propia máquina. Nada de esto s
    key_file=~/.oci/<tu_clave>.pem
    ```
 
-5. **Completar las variables en el `.env`**: `OCI_BUCKET_NAME`, `OCI_NAMESPACE`, `OCI_REGION` y, si usás otro perfil que no sea `[DEFAULT]`, `OCI_CONFIG_PROFILE`.
-6. **Verificar con el smoke test** (sube, descarga, lista y borra un objeto `smoke/<timestamp>.txt`):
+5. **Completar el `.env`**: `OCI_BUCKET_NAME`, `OCI_NAMESPACE`, `OCI_REGION` y, si no usás `[DEFAULT]`, `OCI_CONFIG_PROFILE`.
+6. **Verificar** (sube, descarga, lista y borra un objeto `smoke/<timestamp>.txt`):
 
    ```bash
    python scripts/smoke_oci.py
@@ -86,30 +161,25 @@ Cada integrante configura sus credenciales en su propia máquina. Nada de esto s
 
    Sale con código 0 si todo anduvo, 1 si falló algún paso (imprime la causa probable: 401 credenciales, 403 política IAM, 404 bucket o namespace) y 2 si falta configuración.
 
-**Fallback a disco local.** Si OCI no está configurado (variables `OCI_*` vacías o sin `~/.oci/config`) o la subida falla (401/403/404, red, timeout), `Almacenamiento` guarda el archivo en `ALMACENAMIENTO_LOCAL_PATH` (por defecto `./data/almacenamiento_local`, ignorada por git) con el mismo `objeto_id` que habría tenido en el bucket, registra un warning con la causa y devuelve `status_upload: "pendiente_oci"`. El pipeline sigue funcionando sin bucket; si también falla el disco, se lanza `ErrorDeAlmacenamiento`. Todavía no existe el script que sube a OCI lo que quedó pendiente.
+**Fallback a disco local.** Si OCI no está configurado o la subida falla, `Almacenamiento` guarda el archivo en `ALMACENAMIENTO_LOCAL_PATH` (por defecto `./data/almacenamiento_local`, ignorada por git), registra un warning y devuelve `status_upload: "pendiente_oci"`. No existe todavía un script que suba a OCI lo que quedó pendiente.
 
-> **Seguridad:** `~/.oci/` y los archivos `.pem` viven fuera del repo y nunca se commitean (`.gitignore` ya ignora `.oci/` y `*.pem`). Nunca pegues el contenido de la clave privada en un chat, issue o commit.
->
-> **macOS:** no abras el `.pem` con doble clic. Keychain Access lo interpreta como un certificado y lo agrega al llavero del sistema por error. Si necesitás ver su contenido, usá la terminal (`cat`) o un editor de texto.
+> **Seguridad:** `~/.oci/` y los `.pem` viven fuera del repo (`.gitignore` ignora `.oci/` y `*.pem`). Nunca pegues una clave privada en un chat, issue o commit. En macOS no abras el `.pem` con doble clic: Keychain Access lo interpreta como certificado.
 
-## API
+### Frontend
 
-Backend FastAPI (NM-06, NM-18, NM-19). Los endpoints son funciones síncronas porque las librerías del pipeline (Chroma, SDK de OCI, Gemini) son bloqueantes.
+La interfaz Streamlit consume `POST /api/v1/adaptar` y necesita el backend levantado. Muestra la tarjeta de puntaje (con desplegable "¿Por qué esta nota?" y slider de umbral de revisión), el contenido en vista legible o JSON, las descargas y los errores en una tarjeta (con **Reintentar** solo cuando tiene sentido: no en los 4xx de validación). El CSS depende de la estructura interna de Streamlit 1.40.2 (ver [limitaciones](#7-limitaciones-conocidas)). El cliente HTTP (`frontend/cliente_api.py`) y el formateo (`frontend/formato.py`) no dependen de Streamlit.
 
-```bash
-uvicorn app.api.main:app --reload     # http://127.0.0.1:8000  (documentación interactiva en /docs)
-```
+### Logs y diagnóstico
 
-Importar la app no requiere claves ni red: Gemini, Chroma y OCI se inicializan en la primera solicitud real. Con `OCI_*` sin configurar, los archivos se guardan en disco y la respuesta informa `pendiente_oci`.
+La app escribe a stdout (logger `app`) una línea por paso: `paso=<nombre> inicio` y `paso=<nombre> ok duracion=1.23s`, o `paso=<nombre> FALLÓ duracion=... error=<TipoDeExcepcion>`. No se registra contenido del documento, nombre de archivo ni claves. Si una solicitud se cuelga, `python scripts/diagnostico_pasos.py` prueba por separado y con cronómetro Chroma, un embedding, OCI y una llamada a Gemini (necesita `.env` y `~/.oci/config`; salida 0 todo OK, 1 algún FALLÓ, 2 algún TIMEOUT). Otros scripts de humo (gastan cuota o usan servicios reales): `smoke_endpoint.py`, `smoke_gemini.py`, `smoke_almacenamiento.py`, `smoke_oci.py`; y `calibrar_fidelidad.py` para el umbral.
 
-### Endpoints
+## 5. Uso de la API
 
-- `GET /health` → `{"status": "ok"}` (no toca servicios externos).
-- `POST /api/v1/adaptar` (`multipart/form-data`):
+`POST /api/v1/adaptar` recibe `multipart/form-data`. Hay también `GET /health` → `{"status": "ok"}` (no toca servicios externos).
 
 | Campo | Obligatorio | Descripción |
 |---|---|---|
-| `archivo` | uno de los dos | `.pdf`, `.md` o `.txt` (límite `MAX_UPLOAD_MB`, 10 por defecto) |
+| `archivo` | uno de los dos | `.pdf`, `.md` o `.txt` (límite `MAX_UPLOAD_MB`) |
 | `documento_contenido` | uno de los dos | texto del documento; no combinar con `archivo` |
 | `perfil_destinatario` | sí | `Principiante` o `Lider Tecnico / Arquitecto` |
 | `formato_salida` | sí | `Flashcards` o `Guia Practica Paso a Paso` |
@@ -130,6 +200,8 @@ curl -X POST http://127.0.0.1:8000/api/v1/adaptar \
   -F "perfil_destinatario=Lider Tecnico / Arquitecto" \
   -F "formato_salida=Guia Practica Paso a Paso"
 ```
+
+> El texto del segundo ejemplo es solo ilustrativo: un documento real debe superar la validación de contenido (al menos 200 caracteres y 50 letras).
 
 ### Respuesta de éxito (200)
 
@@ -154,14 +226,15 @@ curl -X POST http://127.0.0.1:8000/api/v1/adaptar \
 }
 ```
 
-- Para `Guia Practica Paso a Paso`, `contenido_adaptado` es `{"pasos": [{"titulo": "...", "detalle": "..."}]}`.
-- `anclaje_fuente_score` mide **anclaje temático** a los fragmentos recuperados, **no veracidad**: detecta contenido fuera de tema, pero un dato inventado sobre el mismo tema puede puntuar alto. Una `baja_confianza: true` es una advertencia, no bloquea la respuesta. Si no se pudo verificar, `anclaje_fuente_score` es `null` y `motivo` lo explica.
+- Con `Guia Practica Paso a Paso`, `contenido_adaptado` es `{"pasos": [{"titulo": "...", "detalle": "..."}]}`.
+- `metadatos.modelo` es el modelo que realmente respondió (puede ser un respaldo).
+- `anclaje_fuente_score` mide anclaje temático, no veracidad ([docs/fidelidad.md](docs/fidelidad.md)). `baja_confianza: true` es una advertencia, no bloquea. Si no se pudo verificar (falla de embeddings), el score es `null` y `motivo` lo explica.
 - `claridad_pedagogica` siempre es `null` (no está implementada).
-- `status_upload` puede ser `exito`, `pendiente_oci` (guardado en disco, ver más arriba) o `error`; una caída de OCI no hace fallar la solicitud. La respuesta nunca incluye rutas del servidor (la ruta del fallback local solo se registra en el log).
+- `status_upload` puede ser `exito`, `pendiente_oci` o `error`; una caída de OCI no hace fallar la solicitud. La respuesta nunca incluye rutas del servidor.
 
-### Respuesta de error
+### Errores
 
-Todos los errores tienen la misma forma, con mensajes en español y sin detalles internos (esos van al log):
+Todos tienen la misma forma, con mensajes en español y sin detalles internos (esos van al log):
 
 ```json
 {
@@ -174,148 +247,106 @@ Todos los errores tienen la misma forma, con mensajes en español y sin detalles
 
 | HTTP | `codigo` | Cuándo |
 |---|---|---|
-| 422 | `entrada_invalida`, `documento_ilegible`, `documento_sin_texto`, `documento_sin_contenido_util`, `documento_muy_corto` | campo inválido o faltante, ni/ambos archivo y texto, extensión no soportada, archivo vacío, PDF corrupto o escaneado sin texto, texto sin contenido útil (letras < 40 % de los caracteres no blancos, o menos de 50 letras) o con menos de `MIN_CHARS_DOCUMENTO` caracteres (200 por defecto). Se rechaza antes de subir a OCI y de llamar a Gemini; la UI no ofrece "Reintentar" en los 4xx |
+| 422 | `entrada_invalida` | campo faltante o inválido, ni archivo ni texto (o ambos), extensión no soportada, archivo vacío |
+| 422 | `documento_ilegible` | PDF corrupto o archivo que no se pudo leer |
+| 422 | `documento_sin_texto` | PDF escaneado u otro documento sin texto extraíble |
+| 422 | `documento_sin_contenido_util` | letras < 40 % de los caracteres no blancos, o menos de 50 letras |
+| 422 | `documento_muy_corto` | menos de `MIN_CHARS_DOCUMENTO` caracteres (200 por defecto) |
 | 413 | `documento_demasiado_grande` | el archivo o el texto supera `MAX_UPLOAD_MB` |
 | 502 | `respuesta_invalida_del_modelo` | Gemini no devolvió un JSON válido ni tras el reintento |
-| 503 | `servicio_no_disponible` | falla de Gemini (generación o embeddings): cuota, red, clave |
-| 500 | `error_interno` | fallo de almacenamiento o cualquier error inesperado |
+| 503 | `servicio_no_disponible` | falla de Gemini (generación o embeddings): cuota, red, clave, todos los modelos caídos |
+| 500 | `error_interno` | fallo de almacenamiento o error inesperado |
 
-Smoke test manual (una sola solicitud real, gasta cuota de Gemini): `python scripts/smoke_endpoint.py`.
+Los rechazos 422/413 ocurren antes de llamar a Gemini (los de contenido, también antes de subir el original a OCI).
 
-### Logs, tiempos máximos y diagnóstico de cuelgues
+## 6. Calidad y pruebas
 
-**Logs.** Al arrancar, la app instala un handler a stdout en el logger `app` (se ve bajo `uvicorn`). Nivel con `LOG_LEVEL` (`DEBUG`, `INFO`, `WARNING`, `ERROR`; por defecto `INFO`). Cada paso de una solicitud deja `paso=<nombre> inicio` y `paso=<nombre> ok duracion=1.23s`; si falla, `paso=<nombre> FALLÓ duracion=... error=<TipoDeExcepcion>`. Pasos: `inicializar_dependencias` (solo la primera solicitud), `guardar_entrada`, `ingesta`, `subida_original`, `indexacion`, `busqueda`, `generacion`, `limpieza`, `fidelidad`, `subida_json`. No se registra contenido del documento, nombre de archivo ni claves. También se ven los reintentos de la librería de Gemini (WARNING).
+La suite automatizada (`pytest -q`, **518 tests**) no usa red ni credenciales: Gemini, embeddings y OCI se reemplazan por fakes. [docs/test_plan.md](docs/test_plan.md) lista cada caso con su estado (*Verificado* si hay un test que lo respalda; *Previsto* si no) y separa lo automatizado de lo manual. Áreas cubiertas: ingesta, pipeline RAG (chunking, embeddings, vector store), configuración, prompts, cliente de Gemini y fallback, orquestador, fidelidad, API y manejo de errores, almacenamiento OCI y frontend (incluido un humo de la UI con `streamlit.testing`).
 
-**Tiempos máximos** (segundos; un timeout termina en un error normalizado y el manejo de errores lo mapea):
+**Resultados E2E manuales del 25/10/2026** (modelo `gemini-3.5-flash-lite`, Gemini real; son mediciones del equipo, no las reproduce la suite automatizada porque gastan cuota):
 
-| Variable | Por defecto | Qué acota | Si vence |
+| Caso | Perfil + formato | Puntaje | Tiempo |
 |---|---|---|---|
-| `GEMINI_TIMEOUT_S` | 45 | cada solicitud a Gemini (deadline gRPC) | `ErrorDeLLM` → 503 |
-| `GEMINI_TIMEOUT_TOTAL_S` | 100 | toda la generación, reintentos de la librería incluidos | `ErrorDeLLM` → 503 |
-| `EMBEDDINGS_TIMEOUT_S` | 60 | cada llamada de embeddings | `ErrorDeEmbeddings` → 503 (en la fidelidad: 200 degradado) |
-| `OCI_CONNECT_TIMEOUT_S` / `OCI_READ_TIMEOUT_S` | 5 / 30 | conexión y lectura del cliente de OCI | fallback a disco local (`pendiente_oci`) |
+| P1 | Líder técnico + Guía práctica | 0.88 | 7,4 s |
+| P2 | Principiante + Flashcards | 0.83 | 6,8 s |
+| P3 | Líder técnico + Flashcards | 0.84 | 4,6 s |
+| P4 | Inyección de prompt resistida | 0.83 | 4,4 s |
+| Negativos | 11 casos de entrada inválida | resultado esperado en los 11 | — |
 
-Reintentos de Gemini: la librería (`langchain-google-genai` 2.0.6) hace como mucho 2 intentos por llamada con espera de 1-60 s, ante cualquier error de la API (un 429 incluido); eso no es configurable. Los parámetros `timeout`/`max_retries` del constructor se ignoran en la ruta síncrona, por eso el plazo se pasa en cada llamada, junto con `retry=None` para anular el reintento del cliente gRPC (que ante un 503 insistía hasta 600 s). Además, si el modelo devuelve JSON inválido, el orquestador reintenta una vez (otra llamada).
+**Regresión del fallback en vivo.** En esa corrida `gemini-3.5-flash` respondió 503 y la app pasó sola a `gemini-3.5-flash-lite` (`intentos=2`, 14,7 s totales). El mecanismo se describe en [docs/fallback.md](docs/fallback.md).
 
-**Modelos de Gemini y respaldos.** Medido: `gemini-3.5-flash` responde en ~2 s; `gemini-3.8-flash` tarda ~37 s o falla con 503; algunos modelos listados devuelven 404 ("no longer available to new users"). Por eso la generación usa una cadena `GEMINI_MODEL` + `GEMINI_MODEL_FALLBACKS`:
+## 7. Limitaciones conocidas
 
-| Variable | Por defecto | Qué hace |
-|---|---|---|
-| `GEMINI_MODEL` | `gemini-3.5-flash` | modelo principal |
-| `GEMINI_MODEL_FALLBACKS` | `gemini-3.8-flash,gemini-3.5-flash-lite` | respaldos en orden, separados por coma; vacía = sin respaldos. Se ignoran espacios, duplicados y el prefijo `models/` |
-| `GEMINI_BACKOFF_S` | 2 | espera antes de pasar al siguiente modelo (no tras un 404) |
+- **El puntaje mide anclaje temático por embeddings, no veracidad.** Detecta contenido fuera de tema; un dato inventado sobre el mismo tema puede puntuar alto ([docs/fidelidad.md](docs/fidelidad.md)).
+- **El modelo puede agregar contexto razonable** que el puntaje no detecta.
+- **El SDK `google.generativeai` está deprecado**: lo trae `langchain-google-genai` 2.0.6 (instalado: `google-generativeai` 0.8.6) y `pytest` muestra un `FutureWarning`.
+- **La UI depende de internals de Streamlit 1.40.2** (selectores `data-testid` en `frontend/estilos.py`): no actualizar sin revisar el CSS.
+- **Cuotas del plan gratuito de Gemini** (límites por minuto y por día): un 429 hace pasar al siguiente modelo y, si todos fallan, la API responde 503.
+- **Documentos de solo símbolos o muy cortos se rechazan** (422).
+- **No implementado:** metadatos de aprendizaje (conceptos clave, prerrequisitos, tiempo estimado) y los parámetros de nicho y nivel de detalle: `nicho_sector` y `nivel_detalle` se aceptan y se devuelven en `metadatos`, pero no influyen en el contenido. `claridad_pedagogica` tampoco está implementada.
+- **La orquestación es una cadena de prompts**, con verificación de fidelidad y reintento por JSON inválido, no un grafo de agentes.
+- Lo que queda en `pendiente_oci` no se sube automáticamente después.
 
-Pasan al siguiente modelo: 503, 504/deadline, 429, 404 y el tope de reloj de la llamada (`GEMINI_TIMEOUT_S` + 5 s). No cambian de modelo: credenciales o pedido inválidos (400/401/403), bugs propios, respuesta vacía y JSON inválido (ese tiene su reintento, que sigue con el modelo que respondió). Todo respeta `GEMINI_TIMEOUT_TOTAL_S`: al agotarse no se prueban más modelos. Si fallan todos, la API responde el mismo 503 de siempre; el log lista cada modelo y el tipo de su error. `metadatos.modelo` informa el modelo que realmente respondió. Ejemplo de log:
+## 8. Próximos pasos
 
-```
-2026-10-24 15:30:01 INFO    app.api.servicio: paso=generacion inicio
-2026-10-24 15:30:03 WARNING app.llm.gemini_client: paso=generacion modelo=gemini-3.5-flash intento=1 fallo=ServiceUnavailable pasando_a=gemini-3.8-flash
-2026-10-24 15:30:07 INFO    app.llm.gemini_client: paso=generacion modelo_usado=gemini-3.8-flash intentos=2
-```
+- Recuperación híbrida (vectorial + léxica) y reranking.
+- Citas por elemento generado.
+- Más perfiles (Desarrollador, Ejecutivo) y formatos (Quiz, Resumen, Tutorial).
+- Exportación `.apkg` y PDF.
+- Historial/biblioteca de documentos y autenticación.
+- Despliegue con Docker y OCI Compute.
+- Migración al SDK `google.genai`.
+- Mejor detección de contradicciones en la fidelidad.
+- Metadatos de aprendizaje (conceptos clave, prerrequisitos, tiempo estimado).
+- Que los parámetros de nicho y nivel de detalle influyan en el contenido generado.
+- Evolucionar la orquestación de cadena de prompts a un grafo de agentes.
 
-Nota: la librería reintenta una vez por su cuenta cada llamada (también un 404, ~2 s), antes de que se pase al siguiente modelo.
-
-**Diagnóstico.** Si una solicitud se cuelga, `python scripts/diagnostico_pasos.py [limite_chroma] [limite_embedding] [limite_oci] [limite_gemini]` prueba por separado y con cronómetro: Chroma, un embedding, subir/descargar/borrar un archivo en OCI (sin fallback local) y UNA llamada a Gemini. Imprime OK / FALLÓ / TIMEOUT con la duración de cada paso y cuál es el sospechoso. Necesita `.env` y `~/.oci/config`. Salida: 0 todo OK, 1 algún FALLÓ, 2 algún TIMEOUT.
-
-## Frontend
-
-Interfaz Streamlit (NM-25, NM-26, NM-27) que consume `POST /api/v1/adaptar`. Necesita la API levantada.
-
-```bash
-uvicorn app.api.main:app --reload     # terminal 1: backend en http://127.0.0.1:8000
-streamlit run frontend/app.py         # terminal 2: frontend en http://localhost:8501
-```
-
-| Variable | Por defecto | Qué hace |
-|---|---|---|
-| `API_BASE_URL` | `http://127.0.0.1:8000` | URL base de la API |
-| `API_TIMEOUT_S` | 150 | plazo de la solicitud; debe superar el peor caso del backend (~100 s) |
-| `APP_TIMEZONE` | `America/Asuncion` | zona IANA con la que se muestra la fecha de generación; si es inválida se muestra en UTC y la etiqueta lo dice |
-| `MAX_UPLOAD_MB`, `EXTENSIONES_PERMITIDAS` | 10, `.pdf,.md,.txt` | los mismos del backend: la UI valida con ellos antes de enviar |
-
-Se leen del entorno o del `.env` de la raíz. Qué hace la interfaz:
-
-- **Diseño:** encabezado oscuro, entrada a la izquierda (tarjetas "1 · Material fuente" y "2 · Perfil y formato") y resultado a la derecha; en pantallas angostas las columnas se apilan. Perfil y formato son desplegables (`st.selectbox`); la vista legible / JSON usa `st.segmented_control`. Todo el CSS está en `frontend/estilos.py` (una sola función lo inyecta), los bloques HTML en `frontend/componentes.py` y el tema en `.streamlit/config.toml` (magenta `#CA00CA`, violeta de marca `#5D0F85`). Las fuentes (Poppins, JetBrains Mono) se piden a Google Fonts; sin conexión se usa la fuente del sistema.
-- **Carga:** subir un archivo (PDF, Markdown o texto) o pegar el texto (con contador de caracteres); el botón **Usar texto de ejemplo** carga un texto y un título de muestra (frontend/ejemplos.py) y pasa al modo "Pegar texto" desde cualquiera de los dos modos. Perfil y formato con etiquetas amigables que se envían con los valores exactos del enum del backend. `nicho_sector` y `nivel_detalle` no se muestran porque hoy no influyen en el contenido.
-- **Resultado:** tarjeta de score (anclaje a la fuente, umbral, barra con la marca del umbral y píldora "Confianza normal" / "Baja confianza"; "No disponible" si el score es `null`; el puntaje mide anclaje temático, no veracidad). Dentro de la tarjeta:
-  - **¿Por qué esta nota?**: desplegable que explica cómo se calcula (promedio de la similitud más alta de cada unidad contra los fragmentos recuperados) y cuántas unidades y fragmentos se compararon.
-  - **¿Qué tan exigente querés ser al revisar?**: slider de 0.50 a 0.95 que arranca en el umbral oficial. Solo cambia cómo se lee este resultado (marca del umbral y frase de comparación): no vuelve a generar, no llama a la API y no cambia la píldora ni el aviso de baja confianza, que reflejan solo lo que devolvió la API. "Volver al umbral oficial" lo restablece. Sin umbral o sin score no se muestra.
-- **Contenido:** flashcards (pregunta visible, respuesta en un desplegable) o pasos numerados, con la etiqueta "Completado"; vista **JSON** con la respuesta cruda. Descargas: **CSV compatible con Anki** (flashcards: dos columnas pregunta,respuesta, UTF-8, sin encabezado; las celdas que empiezan con `=`, `+`, `-` o `@` llevan un apóstrofo para que una planilla no las ejecute como fórmula), **Markdown** (guías) y **JSON**. Los archivos se llaman `nuevamente-<título saneado>.<extensión>`.
-- **Detalles de la generación** (desplegable): modelo, fragmentos, fecha en `APP_TIMEZONE`, **tiempo de generación** medido en la UI y estado de OCI.
-- **Errores:** API caída, timeout, 4xx (se muestra el mensaje del formato de error de la API) y 5xx se muestran en una tarjeta de error, nunca como stack traces. Después de un error, **Reintentar** conserva lo cargado. El botón se deshabilita mientras se genera.
-
-El cliente HTTP (`frontend/cliente_api.py`) y la lógica de formato (`frontend/formato.py`) no dependen de Streamlit y están cubiertos por `tests/test_frontend.py`.
-
-## Próximamente (aún no implementado)
-
-Este comando apunta a un archivo que todavía no existe en el repo (`scripts/ingest.py`):
-
-```bash
-python scripts/ingest.py          # CLI de ingesta de docs/
-```
-
-## Contrato del endpoint principal
-
-El contrato vigente es el de la sección **API** (`POST /api/v1/adaptar`, definido en `app/api/schemas.py`). Los valores de `perfil_destinatario` y `formato_salida` están limitados a los definidos en `app/llm/prompts.py`, no aceptan texto libre.
-
-## Checklist del MVP
-
-- [ ] Ingesta funcional de documentos técnicos (PDF, Markdown o texto)
-- [ ] Pipeline de RAG con chunking, embeddings y búsqueda vectorial
-- [ ] Orquestación con Gemini vía LangChain
-- [ ] Adaptación funcionando para 2 perfiles y 2 formatos distintos
-- [ ] Salida estructurada en JSON + interfaz interactiva (Streamlit o Gradio)
-- [ ] Integración activa con OCI Object Storage, capa Always Free
-- [ ] Mínimo 3 ejemplos de ejecución con documentos reales o simulados
-- [ ] Documentación completa con diagrama de arquitectura
-
-## Actualizar documentos de referencia
-
-Pendiente: depende de `scripts/ingest.py` y del backend (ver "Próximamente (aún no implementado)").
-
-## Despliegue
-
-- **Frontend/Backend:** Streamlit Community Cloud, Render o una instancia OCI Compute (Always Free) si el equipo decide priorizarlo en la semana 4.
-- **Almacenamiento:** OCI Object Storage, capa Always Free, es obligatorio independientemente de dónde corra la app — así lo exige el checklist del hackathon.
-
-## Estructura del proyecto
+## 9. Estructura del proyecto
 
 ```
-nuevamente/
+.
 ├── app/
-│   ├── api/                      # Backend FastAPI (main, schemas, errores, servicio, dependencias)
-│   ├── config.py                 # Settings (pydantic-settings + .env)
-│   ├── ingesta/
-│   │   ├── pdf_loader.py         # Extracción de texto desde PDF (PyPDF)
-│   │   └── text_loader.py        # Lectura de Markdown/texto plano
-│   ├── rag/
-│   │   ├── chunking.py           # Segmentación del texto
-│   │   ├── embeddings.py         # Generación de embeddings
-│   │   └── vector_store.py       # Abstracción Chroma/FAISS
-│   ├── llm/
-│   │   ├── prompts.py            # Prompts por perfil y formato
-│   │   ├── orquestacion.py       # Cadena LangChain + Gemini
-│   │   └── verificacion.py       # Chequeo de fidelidad y metadatos
-│   └── oci/
-│       └── storage.py            # Subida/lectura en OCI Object Storage
-├── frontend/
-│   ├── app.py                    # Interfaz Streamlit
-│   ├── cliente_api.py            # Cliente HTTP de la API (sin Streamlit)
-│   ├── formato.py                # Opciones, validación y formateo del resultado
-│   ├── componentes.py            # Bloques HTML (funciones puras)
-│   ├── estilos.py                # CSS de la interfaz
-│   └── config.py                 # API_BASE_URL, API_TIMEOUT_S, límites
-├── docs/                         # Documentos fuente para indexar
-├── scripts/
-│   └── ingest.py                 # CLI de ingesta
-├── tests/                        # Test plan y casos automatizados (QA)
-├── requirements.txt
-└── .env.example
+│   ├── api/            # FastAPI: main, schemas, errores, servicio, dependencias
+│   ├── ingesta/        # models, pdf_loader, text_loader, subida, validacion
+│   ├── rag/            # chunking, embeddings, vector_store (ChromaDB), models
+│   ├── llm/            # prompts, gemini_client (fallback), orquestador, fidelidad
+│   ├── oci/            # almacenamiento (OCI Object Storage + fallback a disco)
+│   ├── config.py       # Settings (pydantic-settings + .env)
+│   ├── logging_config.py
+│   └── trazas.py       # logs por paso y topes de tiempo
+├── frontend/           # Streamlit: app, cliente_api, formato, componentes, estilos, ejemplos, config
+├── docs/               # arquitectura.md, fidelidad.md, fallback.md, test_plan.md
+├── scripts/            # smoke_*.py, diagnostico_pasos.py, calibrar_fidelidad.py
+├── tests/              # suite automatizada (518 tests)
+├── .streamlit/config.toml
+├── .env.example
+└── requirements.txt
 ```
 
-## Equipo — G10-LATAM-equipo 45
+## 10. Equipo
+
+G10-LATAM — equipo 45.
 
 | Nombre | Rol |
 |---|---|
 | Jessica Escobar | QA Engineer |
 | Larissa Cabrera | Full Stack Developer |
+
+## 11. Cumplimiento de requisitos
+
+Los 8 puntos del checklist de evaluación del hackathon y la evidencia que se puede comprobar en el repositorio. Los tests citados forman parte de la suite de 518 (`pytest -q`).
+
+| # | Requisito | Estado | Evidencia |
+|---|---|---|---|
+| 1 | Ingestión de PDF, Markdown y texto | Cumplido | `app/ingesta/pdf_loader.py` (pypdf), `app/ingesta/text_loader.py`, `app/ingesta/subida.py`; tests en `tests/test_ingesta.py` y `tests/test_subida.py`; el endpoint acepta `archivo` (.pdf, .md, .txt) o `documento_contenido` (texto) |
+| 2 | RAG con chunking, embeddings y búsqueda vectorial | Cumplido | `app/rag/chunking.py`, `app/rag/embeddings.py` (`gemini-embedding-001`), `app/rag/vector_store.py` (ChromaDB, métrica coseno); tests en `tests/test_chunking.py`, `test_embeddings.py`, `test_vector_store.py`; ver [docs/arquitectura.md](docs/arquitectura.md) |
+| 3 | Orquestación con LLM | Cumplido | `app/llm/orquestador.py` y `app/llm/gemini_client.py` (cadena de modelos con fallback); tests en `tests/test_orquestador.py` y `tests/test_fallback_modelos.py`. Es una cadena de prompts propia, no un grafo de agentes ni una cadena de LangChain (ver [limitaciones](#7-limitaciones-conocidas)) |
+| 4 | Mismo contenido adaptado a 2 perfiles y 2 formatos | Cumplido | `app/llm/prompts.py` define `Principiante` / `Lider Tecnico / Arquitecto` y `Flashcards` / `Guia Practica Paso a Paso` con prompts por combinación; `tests/test_prompts.py` verifica las 4 combinaciones; las corridas P1 a P3 de la [sección 6](#6-calidad-y-pruebas) las ejercitan con Gemini real (mediciones del equipo) |
+| 5 | Salida JSON e interfaz o API | Cumplido | API: `POST /api/v1/adaptar` (`app/api/main.py`, `app/api/schemas.py`; `tests/test_api.py`). Interfaz: `frontend/app.py` (Streamlit; `tests/test_frontend.py`). Descarga del JSON desde la UI |
+| 6 | Integración con OCI Object Storage (Always Free) | Cumplido (integración); el nivel Always Free no se puede comprobar desde el código | `app/oci/almacenamiento.py` sube el documento original (`documentos/`) y el JSON de salida (`salidas/`), con fallback a disco; `tests/test_almacenamiento.py` (cliente falso del SDK); `docs/test_plan.md` registra el smoke test `scripts/smoke_oci.py` contra el bucket real, corrido el 2026-10-20 (medición manual del equipo) |
+| 7 | Mínimo 3 ejemplos de ejecución | Documentado, sin salidas guardadas en el repo | La [sección 6](#6-calidad-y-pruebas) y la sección 7 de [docs/test_plan.md](docs/test_plan.md) registran 4 escenarios E2E (P1 a P4) del 25/10/2026, que son mediciones del equipo. El repo no incluye las respuestas completas de esas corridas; sí incluye un texto de ejemplo en `frontend/ejemplos.py` y `scripts/smoke_endpoint.py` para reproducir una |
+| 8 | Documentación con diagrama de arquitectura | Cumplido | Diagrama Mermaid en la [sección 3](#3-arquitectura-y-tecnologías) y en [docs/arquitectura.md](docs/arquitectura.md); además [docs/fidelidad.md](docs/fidelidad.md), [docs/fallback.md](docs/fallback.md) y [docs/test_plan.md](docs/test_plan.md) |
+
+## 12. Recursos opcionales cubiertos
+
+- **Exportación multiformato**: la interfaz ofrece descarga en **Markdown** (guías prácticas), **CSV compatible con Anki** (flashcards: dos columnas pregunta,respuesta, UTF-8, sin encabezado, con protección ante celdas que empiezan con `=`, `+`, `-` o `@`) y **JSON** (respuesta completa). Implementado en `frontend/formato.py` y `frontend/app.py`; cubierto por `TestDescargas` en `tests/test_frontend.py`. La importación del CSV en Anki es una verificación manual prevista en [docs/test_plan.md](docs/test_plan.md); no está registrada como ejecutada.

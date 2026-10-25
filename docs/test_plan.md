@@ -1,11 +1,13 @@
 # Test plan general — NuevaMente (NM-07)
 
-Responsable: Jessica Escobar (QA Engineer). Última actualización: entrega de Semana 1/2.
+Responsable: Jessica Escobar (QA Engineer). Última actualización: entrega final (suite de 518 tests; resultados E2E manuales del 25/10/2026 en la sección 7).
 
 Convención de estado:
 - **Verificado**: hay un test automatizado que lo prueba, y el test pasa (`pytest`).
 - **Previsto**: el caso está definido acá y planeado, pero todavía no tiene test
-  automatizado (normalmente porque depende de un módulo que aún no está cerrado).
+  automatizado ni corrida manual registrada (normalmente porque depende de un servicio externo real).
+- **Ejecutado (manual)**: caso manual que el equipo corrió contra servicios reales; el resultado está
+  en la sección 7 o en la propia fila. Son mediciones del equipo: la suite automatizada no las reproduce.
 
 No marcamos nada como "listo" sin un test que lo respalde — ver el análisis de
 `decisiones_proyecto.md` del Equipo 38 que motivó esta distinción.
@@ -54,7 +56,7 @@ No marcamos nada como "listo" sin un test que lo respalde — ver el análisis d
 | Lista de chunks vacía no llama al generador | Automatizado | Verificado | `test_agregar_lista_vacia_devuelve_cero_sin_llamar_al_generador` |
 | `top_k` <= 0 lanza error | Automatizado | Verificado | `TestColeccionVaciaYParametrosInvalidos::test_top_k_cero_o_negativo_lanza_error` |
 | Reindexar el mismo documento no duplica (upsert) y actualiza el contenido | Automatizado | Verificado | `test_reindexar_el_mismo_documento_no_duplica`, `test_reindexar_con_el_mismo_id_actualiza_el_contenido`, `test_documentos_distintos_con_mismo_indice_no_se_pisan` |
-| Calidad de la búsqueda con embeddings reales de Gemini y documentos reales | Manual | Previsto | Requiere `GOOGLE_API_KEY` y datos reales indexados — probar en Semana 3 junto al endpoint completo (NM-23) |
+| Calidad de la búsqueda con embeddings reales de Gemini y documentos reales | Manual | Ejecutado (parcial) | La corrida E2E del 25/10/2026 usó embeddings reales de punta a punta (sección 7); no hay una evaluación aparte de la calidad de la recuperación |
 | Colección vacía en vector store no rompe la búsqueda | Automatizado | Verificado | `test_coleccion_vacia_devuelve_lista_vacia_sin_llamar_al_generador` (usa `chromadb.EphemeralClient`, sin disco) |
 
 ### Configuración
@@ -76,7 +78,7 @@ No marcamos nada como "listo" sin un test que lo respalde — ver el análisis d
 | La guía práctica se pide como objeto `{"pasos": [...]}` (instrucción) | Automatizado | Verificado | `tests/test_prompts.py::TestFormaDeSalidaDeLaGuiaPractica::test_instruccion_pide_un_objeto_con_la_clave_pasos` |
 | El ejemplo few-shot de la guía es un objeto con lista de pasos `titulo`/`detalle` | Automatizado | Verificado | `tests/test_prompts.py::TestFormaDeSalidaDeLaGuiaPractica::test_ejemplo_few_shot_es_un_objeto_con_lista_de_pasos` |
 | Los ejemplos few-shot de ambos formatos pasan la validación del orquestador | Automatizado | Verificado | `tests/test_prompts.py::TestFormaDeSalidaDeLaGuiaPractica::test_el_ejemplo_few_shot_pasa_la_validacion_del_orquestador` |
-| Smoke test contra Gemini real (embeddings `gemini-embedding-001`, chat y orquestación) | Manual | Previsto | `python scripts/smoke_gemini.py` — requiere `GOOGLE_API_KEY`; aún no corrido con clave real |
+| Smoke test contra Gemini real (embeddings `gemini-embedding-001`, chat y orquestación) | Manual | Previsto | `python scripts/smoke_gemini.py` — requiere `GOOGLE_API_KEY`; requiere `GOOGLE_API_KEY`; la generación con Gemini real se ejecutó en la corrida E2E del 25/10/2026 (sección 7) |
 | Calidad de la salida del LLM con cada prompt | Manual | Previsto | Evaluar a mano con Gemini real antes de la demo |
 
 ### Cliente de Gemini (NM-16)
@@ -87,7 +89,7 @@ No marcamos nada como "listo" sin un test que lo respalde — ver el análisis d
 | Excepción del proveedor (rate limit, red) se normaliza a `ErrorDeLLM` | Automatizado | Verificado | `tests/test_gemini_client.py::TestGenerar::test_excepcion_del_proveedor_se_normaliza_a_error_de_llm` |
 | Respuesta vacía o solo espacios lanza `ErrorDeLLM` | Automatizado | Verificado | `tests/test_gemini_client.py::TestGenerar::test_respuesta_vacia_o_solo_espacios_lanza_error_de_llm` |
 | Falta de `GOOGLE_API_KEY` da un error claro | Automatizado | Verificado | `tests/test_gemini_client.py::TestGenerar::test_sin_api_key_y_sin_modelo_inyectado_falla_con_mensaje_claro` |
-| Llamada real a Gemini con el modelo `gemini-3.5-flash` y, si hace falta, sus respaldos | Manual | Previsto | Requiere `GOOGLE_API_KEY`; probar antes de la demo |
+| Llamada real a Gemini con el modelo `gemini-3.5-flash` y, si hace falta, sus respaldos | Manual | Ejecutado (manual) | Corrida E2E del 25/10/2026 con `gemini-3.5-flash-lite` y regresión del fallback desde `gemini-3.5-flash` (sección 7) |
 
 ### Orquestador (NM-17)
 
@@ -108,13 +110,13 @@ No marcamos nada como "listo" sin un test que lo respalde — ver el análisis d
 | Falla de Gemini se propaga como `ErrorDeLLM`, sin reintento | Automatizado | Verificado | `tests/test_orquestador.py::TestFallasDeGemini::test_falla_de_gemini_se_propaga_como_error_de_llm_sin_reintentar` |
 | Vector store: filtro por `nombre_archivo`, `top_k` acotado al filtro, índice en metadata | Automatizado | Verificado | `tests/test_vector_store.py::TestFiltroPorNombreArchivo::test_buscar_con_nombre_archivo_solo_devuelve_chunks_de_ese_documento`, `test_sin_filtro_busca_en_toda_la_coleccion`, `test_filtro_por_documento_inexistente_devuelve_lista_vacia_sin_llamar_al_generador`, `test_top_k_se_limita_a_lo_que_matchea_el_filtro`, `test_el_indice_del_chunk_viaja_en_la_metadata` |
 | Vector store: `eliminar_documento` borra solo los chunks del documento | Automatizado | Verificado | `tests/test_vector_store.py::TestEliminarDocumento::test_eliminar_documento_borra_solo_sus_chunks` |
-| Calidad del contenido generado de punta a punta con Gemini real | Manual | Previsto | Requiere `GOOGLE_API_KEY` y un documento real de OCI |
+| Calidad del contenido generado de punta a punta con Gemini real | Manual | Ejecutado (parcial) | Casos P1-P4 del 25/10/2026 (sección 7); se midió el puntaje de fidelidad, no la calidad pedagógica, que es subjetiva |
 
 ### Verificación de fidelidad (NM-20)
 
 Similitud de embeddings entre el contenido generado y los fragmentos recuperados, sin segundo LLM.
-Si el anclaje es bajo se marca `baja_confianza` pero no se bloquea. Todavía no está conectado al
-orquestador ni al endpoint. Los tests usan un fake de embeddings por palabras clave (sin red).
+Similitud de embeddings entre el contenido generado y los fragmentos recuperados, sin segundo LLM.
+Si el anclaje es bajo se marca `baja_confianza` pero no se bloquea. Está conectado al flujo: `ServicioDeAdaptacion` lo ejecuta en el paso `fidelidad` y devuelve `evaluacion_calidad` en la respuesta del endpoint. Los tests usan un fake de embeddings por palabras clave (sin red).
 
 | Caso | Tipo | Estado | Dónde |
 |---|---|---|---|
@@ -131,7 +133,7 @@ orquestador ni al endpoint. Los tests usan un fake de embeddings por palabras cl
 | Calibración del umbral con embeddings reales sobre un set golden (6 fieles, 6 infieles; fuente de 2 fragmentos) | Manual | Verificado — `python scripts/calibrar_fidelidad.py` (solo embeddings, requiere `GOOGLE_API_KEY`). Fieles 0.805-0.900; inventados del mismo tema 0.777-0.856; otro tema 0.611-0.661. Umbral `0.72` = punto medio entre 0.661 y 0.777 |
 | Límite conocido: el score NO separa fieles de datos inventados sobre el mismo tema (rangos solapados) | Manual | Verificado — el score mide anclaje temático, no veracidad; solo detecta contenido fuera de tema. No hay mitigación automática; requiere revisión humana o un juez distinto |
 | Re-calibración del umbral con un documento real y muchos fragmentos | Manual | Previsto | NM-30: correr con un documento real de OCI; el set actual (12 casos, 2 fragmentos) es chico |
-| Integración del verificador en `Orquestador.adaptar` / endpoint | Automatizado | Previsto | Se conecta junto con el endpoint (NM-23) |
+| Integración del verificador en el servicio y el endpoint: la respuesta trae `evaluacion_calidad` (score, umbral, `baja_confianza`); si fallan los embeddings, 200 degradado | Automatizado | Verificado | `tests/test_api.py::TestCaminoFeliz`, `TestFidelidadDegradada` |
 
 ## 3. API (NM-06 esquemas, NM-18 endpoint, NM-19 errores)
 
@@ -156,6 +158,8 @@ palabras clave, Chroma en memoria, chat guionado y cliente de OCI falso (sin red
 | Título demasiado largo | Automatizado | Verificado | `test_titulo_demasiado_largo` |
 | Extensión no soportada; archivo vacío; no UTF-8 | Automatizado | Verificado | `test_extension_no_soportada`, `test_archivo_vacio`, `test_archivo_no_utf8` |
 | PDF corrupto y PDF escaneado sin texto: 422 (el escaneado no sube nada a OCI) | Automatizado | Verificado | `test_pdf_corrupto`, `test_pdf_escaneado_sin_texto` |
+| Validación de contenido (módulo): vacío no se juzga, solo símbolos, proporción de letras, mínimo de 50 letras y de `MIN_CHARS_DOCUMENTO` (200), límite exacto, el relleno en blanco no cuenta, texto con código y tildes pasa | Automatizado | Verificado | `tests/test_validacion_contenido.py` |
+| Texto sin contenido útil o demasiado corto: 422 `documento_sin_contenido_util` / `documento_muy_corto` antes de subir a OCI y de llamar a Gemini; un archivo corto apunta al campo `archivo`; el mínimo es configurable | Automatizado | Verificado | `tests/test_api.py::TestValidacionDeContenido`, `tests/test_validacion_contenido.py::test_un_documento_rechazado_no_se_sube` |
 | Archivo o texto por encima del límite: 413 | Automatizado | Verificado | `test_archivo_demasiado_grande_es_413`, `test_texto_demasiado_grande_es_413` |
 | `ErrorDeLLM` → 503; salida inválida del modelo → 502; `ErrorDeEmbeddings` al indexar → 503 (sin filtrar detalles del proveedor) | Automatizado | Verificado | `TestErroresDelPipeline` |
 | `ErrorDeAlmacenamiento` → 500 amable; excepción inesperada → 500 genérico sin stack ni detalles internos | Automatizado | Verificado | `test_error_de_almacenamiento_es_500_amable`, `test_excepcion_inesperada_es_500_generico_sin_detalles` |
@@ -178,9 +182,10 @@ palabras clave, Chroma en memoria, chat guionado y cliente de OCI falso (sin red
 | JSON inválido usa el reintento existente con el mismo modelo (y 502 si falla dos veces); respuesta vacía no cambia de modelo | Automatizado | Verificado | `TestMetadatosYLogs::test_json_invalido_*`, `TestCadena::test_respuesta_vacia_no_cambia_de_modelo` |
 | Logs `paso=generacion modelo=… intento=… fallo=… pasando_a=…`, `modelo_usado` e intentos en el log final | Automatizado | Verificado | `TestMetadatosYLogs::test_logs_de_cada_intento_y_modelo_usado`, `test_el_ultimo_modelo_que_falla_se_loguea_sin_siguiente` |
 | Parseo de `GEMINI_MODEL_FALLBACKS` (espacios, duplicados, vacía, prefijo `models/`), defaults y `GEMINI_BACKOFF_S` | Automatizado | Verificado | `tests/test_fallback_modelos.py::TestConfig` |
-| Fallback real contra Gemini (principal caído/404 y respaldo respondiendo) | Manual | Previsto | Requiere `GOOGLE_API_KEY`; gasta cuota |
-| Smoke del endpoint con servidor, Gemini y OCI reales (1 solicitud) | Manual | Previsto | `python scripts/smoke_endpoint.py` — requiere servidor levantado y `GOOGLE_API_KEY`; gasta cuota de generación |
-| Dos solicitudes concurrentes reales contra el servidor | Manual | Previsto | Verificar que no se pisan en el vector store con Chroma persistente |
+| Fallback real contra Gemini (principal caído/404 y respaldo respondiendo) | Manual | Ejecutado (manual) | 25/10/2026: `gemini-3.5-flash` respondió 503 y la app pasó sola a `gemini-3.5-flash-lite` (`intentos=2`, 14,7 s totales); sección 7 |
+| Smoke del endpoint con servidor, Gemini y OCI reales (1 solicitud) | Manual | Ejecutado (manual) | `python scripts/smoke_endpoint.py` contra la API real: 200 OK, modelo `gemini-3.5-flash`, 6 flashcards, puntaje 0.8545. Medición del equipo, no un test automatizado |
+| Dos solicitudes concurrentes reales contra el servidor | Manual | Previsto | Verificar que no se pisan en el vector store con Chroma persistente. No se ejecutó: el doble clic de N11 (fila siguiente) no es equivalente |
+| N11 — doble clic en "Generar contenido" | Manual | Ejecutado (manual) | Doble envío desde el mismo navegador en la interfaz Streamlit, 25/10/2026; **no** son dos solicitudes concurrentes reales. Medición del equipo, no un test automatizado |
 | `nicho_sector` y `nivel_detalle` influyen en el contenido | — | Previsto | Hoy solo se devuelven en metadatos; requiere cambios en prompts/orquestador |
 
 ## 4. OCI Object Storage (NM-05, NM-12, NM-22)
@@ -216,6 +221,8 @@ son funciones puras. La UI solo tiene un humo con `streamlit.testing.v1.AppTest`
 | Límite de tamaño y extensiones de la UI = los del backend por defecto | Automatizado | Verificado | `TestMapeoConEnumsDelBackend::test_la_validacion_usa_los_mismos_limites_que_el_backend_por_defecto` |
 | Cliente: éxito, y envía los valores del enum y el título; archivo como multipart | Automatizado | Verificado | `TestClienteApi::test_exito_*`, `test_envia_archivo_como_multipart` |
 | Cliente: 422 muestra mensaje y detalles del formato de error de la API; 413 como validación; 4xx sin ese formato no copia el cuerpo crudo | Automatizado | Verificado | `TestClienteApi::test_422_*`, `test_413_*`, `test_4xx_sin_formato_*` |
+| UI: un error de validación (422/413) muestra el mensaje sin botón **Reintentar** | Automatizado | Verificado | `tests/test_frontend.py::test_un_error_de_validacion_muestra_el_mensaje_sin_boton_reintentar` |
+| UI: la lista de detalles omite los que repiten el mensaje principal (sin espacios sobrantes y sin distinguir mayúsculas); sin detalles distintos no hay lista | Automatizado | Verificado | `TestComponentes::test_error_con_detalle_igual_al_mensaje_no_muestra_lista`, `test_error_con_detalle_distinto_al_mensaje_muestra_lista`, `test_error_con_varios_detalles_solo_muestra_los_distintos`, `test_error_sin_detalles_no_muestra_lista` |
 | Cliente: 502/503/504 → mensaje claro del modelo; 500 → mensaje de la API o genérico | Automatizado | Verificado | `TestClienteApi::test_errores_del_modelo_*`, `test_500_*` |
 | Cliente: timeout y API caída (ConnectError) → `ErrorDeApi` sin texto técnico; 200 con cuerpo inválido controlado | Automatizado | Verificado | `TestClienteApi::test_timeout`, `test_api_caida`, `test_200_con_cuerpo_invalido_*` |
 | Timeout por defecto del cliente (150 s) supera el peor caso del backend (`GEMINI_TIMEOUT_TOTAL_S`) | Automatizado | Verificado | `TestClienteApi::test_el_timeout_por_defecto_supera_el_peor_caso_del_backend` |
@@ -240,7 +247,7 @@ son funciones puras. La UI solo tiene un humo con `streamlit.testing.v1.AppTest`
 | Tiempo de generación, chip "Completado" | Automatizado | Verificado | `TestTiempoYChip`, `test_resultado_con_slider_nota_tiempo_y_chip` |
 | Importar el CSV en Anki; abrirlo en una planilla y comprobar que las celdas con apóstrofo no se ejecutan | Manual | Previsto | Revisión manual |
 | Aspecto de slider, desplegable de la nota, botones de descarga y chip (medido una vez con Chrome headless; no automatizado) | Manual | Previsto | Revisión visual |
-| Flujo completo en el navegador (cargar, generar, ver resultado, descargar JSON, reintentar tras un error, botón deshabilitado mientras genera) | Manual | Previsto | `uvicorn` + `streamlit run frontend/app.py` con Gemini real; gasta cuota |
+| Flujo completo en el navegador (cargar, generar, ver resultado, descargar JSON, reintentar tras un error, botón deshabilitado mientras genera) | Manual | Ejecutado (manual) | Escenarios P1, P2, P3 y P4 y casos negativos N1 a N11, ejecutados desde la interfaz Streamlit el 25/10/2026 con `uvicorn` + `streamlit run frontend/app.py` y Gemini real (sección 7). Medición del equipo, no un test automatizado; el detalle por paso de este flujo no se registró acá |
 | Subir archivo (PDF/MD/TXT) desde la UI | Manual | Previsto | `AppTest` de esta versión de Streamlit no soporta `file_uploader` |
 | Estética contra el prototipo: colores, tipografías (Poppins / JetBrains Mono), selectores segmentados, barra de score, foco visible (outline magenta), apilado en pantallas angostas, CSS enganchado a `data-testid` de Streamlit 1.40.2 | Manual | Previsto | Revisión visual en el navegador; no se pudo verificar en esta entrega |
 
@@ -254,9 +261,27 @@ son funciones puras. La UI solo tiene un humo con `streamlit.testing.v1.AppTest`
   Se prueban a mano antes de cada demo y se documentan acá con capturas o notas
   cuando corresponda.
 
+## 7. Resultados de la ejecución del 25/10/2026
+
+Mediciones manuales del equipo, hechas con Gemini real (modelo `gemini-3.5-flash-lite`). No las reproduce la suite automatizada (requieren clave y gastan cuota); acá se registran los datos tal como los informó el equipo.
+
+| Caso | Perfil + formato | Puntaje de fidelidad | Tiempo | Estado |
+|---|---|---|---|---|
+| P1 | Líder técnico + Guía práctica | 0.88 | 7,4 s | Ejecutado (manual) |
+| P2 | Principiante + Flashcards | 0.83 | 6,8 s | Ejecutado (manual) |
+| P3 | Líder técnico + Flashcards | 0.84 | 4,6 s | Ejecutado (manual) |
+| P4 | Inyección de prompt resistida | 0.83 | 4,4 s | Ejecutado (manual) |
+| Negativos | 11 casos de entrada inválida (N1 a N11) | — | — | Ejecutado (manual): resultado esperado en los 11 |
+
+Además del E2E anterior, se corrió `scripts/smoke_endpoint.py` contra la API real: 200 OK, `gemini-3.5-flash`, 6 flashcards, puntaje 0.8545. Los escenarios P1 a P4 y N1 a N11 se ejecutaron desde la interfaz Streamlit el 25/10/2026. Todo esto son mediciones del equipo, no tests automatizados.
+
+**Regresión del fallback en vivo.** En esa corrida `gemini-3.5-flash` respondió 503 y la app pasó sola a `gemini-3.5-flash-lite` (`intentos=2`, 14,7 s totales).
+
+Qué cubren y qué no: los puntajes miden anclaje temático, no veracidad (ver `docs/fidelidad.md`); la calidad pedagógica del contenido no se evaluó con una métrica.
+
 ## Cómo correr los tests automatizados
 
 ```bash
 pip install -r requirements.txt
-pytest -v
+pytest -q      # 518 tests, sin red ni credenciales
 ```
