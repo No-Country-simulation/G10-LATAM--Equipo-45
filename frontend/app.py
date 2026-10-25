@@ -3,7 +3,7 @@ NM-25 / NM-26 / NM-27 — Interfaz Streamlit de NuevaMente.
 
     streamlit run frontend/app.py
 
-Toda la lógica testeable vive en frontend/cliente_api.py y frontend/formato.py; acá solo se dibuja.
+Lógica testeable: frontend/cliente_api.py y frontend/formato.py. HTML: frontend/componentes.py. CSS: frontend/estilos.py.
 """
 
 import sys
@@ -14,8 +14,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st  # noqa: E402
 
-from frontend import cliente_api, formato  # noqa: E402
+from frontend import cliente_api, componentes, formato  # noqa: E402
 from frontend.config import cargar_config  # noqa: E402
+from frontend.estilos import inyectar_estilos  # noqa: E402
 
 config = cargar_config()
 
@@ -27,6 +28,8 @@ ss.setdefault("fase", OCIOSO)
 ss.setdefault("resultado", None)
 ss.setdefault("error", None)
 ss.setdefault("problemas", [])
+
+inyectar_estilos()
 
 
 def _entrada_actual() -> dict:
@@ -85,105 +88,94 @@ def _mostrar_contenido(contenido) -> None:
         if not pasos:
             st.info("La guía no trae pasos.")
         for numero, (titulo, detalle) in enumerate(pasos, start=1):
-            st.markdown(f"**{numero}. {titulo}**")
-            st.write(detalle)
+            with st.container(key=f"nm-item-paso-{numero}"):
+                st.markdown(componentes.item("Paso", numero, titulo), unsafe_allow_html=True)
+                st.write(detalle)
         return
     tarjetas = formato.items_flashcards(contenido)
     if not tarjetas:
         st.info("No se generaron flashcards.")
-    for pregunta, respuesta in tarjetas:
-        with st.container(border=True):
-            st.markdown(f"**{pregunta}**")
+    for numero, (pregunta, respuesta) in enumerate(tarjetas, start=1):
+        with st.container(key=f"nm-item-tarjeta-{numero}"):
+            st.markdown(componentes.item("Tarjeta", numero, pregunta), unsafe_allow_html=True)
             with st.expander("Ver respuesta"):
                 st.write(respuesta)
 
 
-def _mostrar_calidad(calidad: dict) -> None:
-    st.subheader("Calidad")
-    if calidad.get("baja_confianza"):
-        st.warning("Baja confianza: el contenido generado podría no reflejar bien el documento. Revisalo con cuidado.")
-    col_score, col_umbral = st.columns(2)
-    col_score.metric("Anclaje al documento", formato.texto_score(calidad.get("anclaje_fuente_score")))
-    col_umbral.metric("Umbral", formato.texto_umbral(calidad.get("umbral")))
-    if calidad.get("anclaje_fuente_score") is None and calidad.get("motivo"):
-        st.caption(f"No se pudo medir el anclaje: {calidad['motivo']}")
-    st.caption(formato.AVISO_ANCLAJE)
-
-
 def _mostrar_metadatos(meta: dict, oci: dict) -> None:
-    st.subheader("Detalles de la generación")
-    st.markdown(
-        f"- **Modelo:** {meta.get('modelo', 'No disponible')}\n"
-        f"- **Fragmentos usados:** {meta.get('fragmentos_usados', 'No disponible')}\n"
-        f"- **Fecha:** {formato.texto_fecha(meta.get('fecha_generacion'))}"
-    )
-    st.markdown("**Almacenamiento en OCI**")
-    st.markdown(
-        f"- **Documento original:** {formato.texto_almacenamiento(oci.get('documento_original'))}\n"
-        f"- **Resultado JSON:** {formato.texto_almacenamiento(oci.get('salida_json'))}"
-    )
+    with st.expander("Detalles de la generación"):
+        st.markdown(
+            f"- **Modelo:** {meta.get('modelo', 'No disponible')}\n"
+            f"- **Fragmentos usados:** {meta.get('fragmentos_usados', 'No disponible')}\n"
+            f"- **Fecha:** {formato.texto_fecha(meta.get('fecha_generacion'), config.app_timezone)}\n"
+            f"- **Documento original:** {formato.texto_almacenamiento(oci.get('documento_original'))}\n"
+            f"- **Resultado JSON:** {formato.texto_almacenamiento(oci.get('salida_json'))}"
+        )
 
 
 def _mostrar_resultado(respuesta: dict) -> None:
-    st.divider()
-    st.header("Resultado")
-    pestana_contenido, pestana_json = st.tabs(["Contenido", "JSON"])
-    with pestana_contenido:
-        _mostrar_contenido(respuesta.get("contenido_adaptado"))
-    with pestana_json:
-        st.json(respuesta)
-    st.download_button(
-        "Descargar JSON",
-        data=formato.json_formateado(respuesta),
-        file_name=formato.nombre_descarga(respuesta),
-        mime="application/json",
-    )
-    col_calidad, col_meta = st.columns(2)
-    with col_calidad:
-        _mostrar_calidad(respuesta.get("evaluacion_calidad") or {})
-    with col_meta:
-        _mostrar_metadatos(respuesta.get("metadatos") or {}, respuesta.get("almacenamiento_oci") or {})
+    with st.container(key="nm-card-score"):
+        st.markdown(componentes.tarjeta_score(respuesta.get("evaluacion_calidad") or {}), unsafe_allow_html=True)
+    with st.container(key="nm-card-contenido"):
+        col_titulo, col_vista = st.columns([3, 2])
+        col_titulo.markdown(componentes.titulo_contenido(respuesta), unsafe_allow_html=True)
+        vista = col_vista.segmented_control(
+            "Vista", ["Vista legible", "JSON"], default="Vista legible", key="vista", label_visibility="collapsed"
+        )
+        if vista == "JSON":
+            st.markdown(componentes.bloque_json(respuesta), unsafe_allow_html=True)
+            st.download_button(
+                "Descargar JSON",
+                data=formato.json_formateado(respuesta),
+                file_name=formato.nombre_descarga(respuesta),
+                mime="application/json",
+            )
+        else:
+            _mostrar_contenido(respuesta.get("contenido_adaptado"))
+    _mostrar_metadatos(respuesta.get("metadatos") or {}, respuesta.get("almacenamiento_oci") or {})
 
 
 # --------------------------------------------------------------------------------------
 # Página
 # --------------------------------------------------------------------------------------
 
-st.title("NuevaMente")
-st.caption("Adaptá documentación técnica a distintos perfiles y formatos de estudio, anclada al documento original.")
+st.markdown(componentes.encabezado(), unsafe_allow_html=True)
 
 ocupado = ss.fase == GENERANDO
-col_entrada, col_parametros = st.columns([3, 2], gap="large")
+col_entrada, col_resultado = st.columns([1, 1.2], gap="large")
 
 with col_entrada:
-    st.subheader("1. Documento")
-    st.radio("¿Cómo querés cargarlo?", ["Subir archivo", "Pegar texto"], key="modo", horizontal=True, disabled=ocupado)
-    if ss.modo == "Pegar texto":
-        st.text_area("Texto del documento", key="texto_documento", height=260, disabled=ocupado)
+    with st.container(key="nm-card-fuente"):
+        st.markdown(componentes.titulo_tarjeta("1 · Material fuente"), unsafe_allow_html=True)
+        st.radio("¿Cómo querés cargarlo?", ["Subir archivo", "Pegar texto"], key="modo", horizontal=True, disabled=ocupado)
+        if ss.modo == "Pegar texto":
+            st.text_area("Texto del documento", key="texto_documento", height=250, disabled=ocupado)
+            st.markdown(componentes.contador(len(ss.get("texto_documento", ""))), unsafe_allow_html=True)
+        else:
+            st.file_uploader(
+                "Archivo",
+                type=[e.lstrip(".") for e in config.extensiones_archivo],
+                key="archivo_subido",
+                disabled=ocupado,
+                help=f"Tamaño máximo: {config.max_upload_mb} MB.",
+            )
+        st.text_input("Título (opcional)", key="titulo_documento", max_chars=200, disabled=ocupado)
+
+    with st.container(key="nm-card-parametros"):
+        st.markdown(componentes.titulo_tarjeta("2 · Perfil y formato"), unsafe_allow_html=True)
+        st.selectbox("Perfil de quien lo va a usar", list(formato.PERFILES), index=0, key="perfil", disabled=ocupado)
+        st.selectbox("Formato de salida", list(formato.FORMATOS), index=0, key="formato", disabled=ocupado)
+        st.button("Generar contenido", type="primary", disabled=ocupado, on_click=_lanzar, use_container_width=True)
+        for problema in ss.problemas:
+            st.markdown(componentes.tarjeta_error(problema, []), unsafe_allow_html=True)
+
+with col_resultado:
+    if ss.fase == GENERANDO:
+        _generar()
+    elif ss.fase == FALLO and ss.error is not None:
+        st.markdown(componentes.tarjeta_error(ss.error.mensaje, ss.error.detalles), unsafe_allow_html=True)
+        st.button("Reintentar", on_click=_lanzar)
+    elif ss.fase == LISTO and ss.resultado:
+        _mostrar_resultado(ss.resultado)
     else:
-        st.file_uploader(
-            "Archivo",
-            type=[e.lstrip(".") for e in config.extensiones_archivo],
-            key="archivo_subido",
-            disabled=ocupado,
-            help=f"Tamaño máximo: {config.max_upload_mb} MB.",
-        )
-    st.text_input("Título (opcional)", key="titulo_documento", max_chars=200, disabled=ocupado)
-
-with col_parametros:
-    st.subheader("2. Parámetros")
-    st.selectbox("Perfil del destinatario", list(formato.PERFILES), key="perfil", disabled=ocupado)
-    st.selectbox("Formato de salida", list(formato.FORMATOS), key="formato", disabled=ocupado)
-    st.button("Generar contenido", type="primary", disabled=ocupado, on_click=_lanzar, use_container_width=True)
-    for problema in ss.problemas:
-        st.error(problema)
-
-if ss.fase == GENERANDO:
-    _generar()
-elif ss.fase == FALLO and ss.error is not None:
-    st.error(ss.error.mensaje)
-    for detalle in ss.error.detalles:
-        st.caption(f"• {detalle['campo']}: {detalle['problema']}".replace("• : ", "• "))
-    st.button("Reintentar", on_click=_lanzar)
-elif ss.fase == LISTO and ss.resultado:
-    _mostrar_resultado(ss.resultado)
+        st.markdown(componentes.estado_vacio(), unsafe_allow_html=True)

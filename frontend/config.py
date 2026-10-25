@@ -23,6 +23,9 @@ class ConfigFrontend(BaseSettings):
         gt=0,
         description="Plazo (s) de la solicitud a la API. Debe superar el peor caso del backend (~100 s)",
     )
+    app_timezone: str = Field(
+        default="America/Asuncion", description="Zona horaria IANA para mostrar la fecha de generación"
+    )
     max_upload_mb: int = Field(default=10, gt=0)
     extensiones_permitidas: str = Field(default=".pdf,.md,.txt")
 

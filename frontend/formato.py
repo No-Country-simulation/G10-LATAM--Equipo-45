@@ -4,6 +4,7 @@ NM-25 / NM-26 — Lógica pura de la interfaz (sin Streamlit): opciones, validac
 
 import json
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Etiqueta amigable -> valor EXACTO del enum del backend (app/llm/prompts.py). Hay un test que lo cruza con el enum.
 PERFILES = {
@@ -85,15 +86,30 @@ def texto_umbral(umbral) -> str:
     return texto_score(umbral)
 
 
-def texto_fecha(valor) -> str:
-    """Fecha ISO 8601 de la API (UTC) como '24/10/2026 15:30 UTC'; si no se puede interpretar, 'No disponible'."""
+def _zona(nombre: str):
+    """ZoneInfo para `nombre`, o None si es inválida (el llamador cae a UTC)."""
+    try:
+        return ZoneInfo(nombre)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        return None
+
+
+def texto_fecha(valor, zona: str = "UTC") -> str:
+    """
+    Fecha ISO 8601 de la API (UTC) en la zona IANA `zona`, con la zona en la etiqueta:
+    '24/10/2026 12:30 (America/Asuncion)'. Si la zona es inválida o es UTC: '24/10/2026 15:30 UTC'.
+    Si la fecha no se puede interpretar, 'No disponible'.
+    """
     try:
         fecha = datetime.fromisoformat(str(valor).replace("Z", "+00:00"))
     except ValueError:
         return "No disponible"
     if fecha.tzinfo is None:
         fecha = fecha.replace(tzinfo=timezone.utc)
-    return fecha.astimezone(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+    destino = None if zona.strip().upper() == "UTC" else _zona(zona.strip())
+    if destino is None:
+        return fecha.astimezone(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+    return f"{fecha.astimezone(destino):%d/%m/%Y %H:%M} ({zona.strip()})"
 
 
 def texto_almacenamiento(resultado) -> str:
@@ -112,3 +128,61 @@ def nombre_descarga(respuesta: dict) -> str:
     titulo = str((respuesta.get("metadatos") or {}).get("documento_titulo") or "resultado")
     limpio = "".join(c if c.isalnum() else "_" for c in titulo).strip("_")[:50] or "resultado"
     return f"nuevamente_{limpio}.json"
+
+
+def porcentaje_barra(score) -> float | None:
+    """Ancho (0-100) de la barra de score; None si el score es null / no numérico. Se acota a [0, 100]."""
+    if isinstance(score, bool) or not isinstance(score, (int, float)) or score != score:
+        return None
+    return round(min(max(score, 0.0), 1.0) * 100, 1)
+
+
+def estado_confianza(baja_confianza) -> tuple[str, str]:
+    """(clave de estilo, texto de la píldora). El texto va siempre: el color no es la única señal."""
+    if baja_confianza:
+        return "baja", "Baja confianza"
+    return "normal", "Confianza normal"
+
+
+def texto_caracteres(cantidad: int) -> str:
+    """'1 carácter' / '12.345 caracteres' (separador de miles con punto)."""
+    if cantidad == 1:
+        return "1 carácter"
+    return f"{cantidad:,}".replace(",", ".") + " caracteres"
+
+
+def etiqueta_de(mapa: dict[str, str], valor) -> str:
+    """Etiqueta amigable del valor del enum (inverso de PERFILES / FORMATOS); si no se conoce, el valor tal cual."""
+    for etiqueta, enum in mapa.items():
+        if enum == valor:
+            return etiqueta
+    return str(valor) if valor else "No disponible"
+
+
+def posicion_umbral(umbral) -> float | None:
+    """Posición (0-100) de la marca del umbral sobre la barra: el mismo cálculo y los mismos límites que el score."""
+    return porcentaje_barra(umbral)
+
+
+def posicion_etiqueta_umbral(umbral, minimo: float = 12.0, maximo: float = 88.0) -> float | None:
+    """
+    Posición (0-100) del centro de la etiqueta "Umbral 0.72", limitada a [minimo, maximo] para que el texto,
+    centrado en ese punto, no se salga de la tarjeta cuando el umbral está cerca de 0 o de 1.
+    La marca usa `posicion_umbral` (sin limitar); la etiqueta usa esta.
+    """
+    posicion = posicion_umbral(umbral)
+    if posicion is None:
+        return None
+    return min(max(posicion, minimo), maximo)
+
+
+def comparacion_umbral(score, umbral) -> tuple[str, str] | None:
+    """
+    (estado, frase) de comparar el score con el umbral, o None si falta alguno de los dos.
+    Un score igual al umbral cuenta como que lo supera.
+    """
+    if porcentaje_barra(score) is None or porcentaje_barra(umbral) is None:
+        return None
+    if score >= umbral:
+        return "supera", f"Supera el umbral mínimo ({texto_umbral(umbral)})"
+    return "debajo", f"Queda por debajo del umbral mínimo ({texto_umbral(umbral)})"

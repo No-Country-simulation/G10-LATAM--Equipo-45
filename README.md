@@ -230,14 +230,15 @@ streamlit run frontend/app.py         # terminal 2: frontend en http://localhost
 |---|---|---|
 | `API_BASE_URL` | `http://127.0.0.1:8000` | URL base de la API |
 | `API_TIMEOUT_S` | 150 | plazo de la solicitud; debe superar el peor caso del backend (~100 s) |
+| `APP_TIMEZONE` | `America/Asuncion` | zona IANA con la que se muestra la fecha de generación; si es inválida se muestra en UTC y la etiqueta lo dice |
 | `MAX_UPLOAD_MB`, `EXTENSIONES_PERMITIDAS` | 10, `.pdf,.md,.txt` | los mismos del backend: la UI valida con ellos antes de enviar |
 
 Se leen del entorno o del `.env` de la raíz. Qué hace la interfaz:
 
-- **Carga:** subir un archivo (PDF, Markdown o texto) o pegar el texto; perfil y formato con etiquetas amigables que se envían con los valores exactos del enum del backend. `nicho_sector` y `nivel_detalle` no se muestran porque hoy no influyen en el contenido.
-- **Resultado:** flashcards (pregunta visible, respuesta en un desplegable) o guía numerada; pestaña **JSON** con la respuesta cruda y botón de descarga; panel de calidad (el puntaje mide anclaje temático, no veracidad; aviso visible si `baja_confianza`) y detalles de la generación (modelo, fragmentos, fecha, estado del guardado en OCI).
-- **Errores:** API caída, timeout, 4xx (se muestra el mensaje del formato de error de la API) y 5xx se muestran como mensajes claros, nunca como stack traces. Después de un error, **Reintentar** conserva lo cargado. El botón se deshabilita mientras se genera.
-- **Tema:** violeta `#5D0F85` en `.streamlit/config.toml`.
+- **Diseño:** encabezado oscuro, entrada a la izquierda (tarjetas "1 · Material fuente" y "2 · Perfil y formato") y resultado a la derecha; en pantallas angostas las columnas se apilan. Perfil y formato son desplegables (`st.selectbox`); la vista legible / JSON usa `st.segmented_control`. Todo el CSS está en `frontend/estilos.py` (una sola función lo inyecta), los bloques HTML en `frontend/componentes.py` y el tema en `.streamlit/config.toml` (magenta `#CA00CA`, violeta de marca `#5D0F85`). Las fuentes (Poppins, JetBrains Mono) se piden a Google Fonts; sin conexión se usa la fuente del sistema.
+- **Carga:** subir un archivo (PDF, Markdown o texto) o pegar el texto (con contador de caracteres); perfil y formato con etiquetas amigables que se envían con los valores exactos del enum del backend. `nicho_sector` y `nivel_detalle` no se muestran porque hoy no influyen en el contenido.
+- **Resultado:** tarjeta de score (anclaje a la fuente, umbral, barra y píldora "Confianza normal" / "Baja confianza"; "No disponible" si el score es `null`; el puntaje mide anclaje temático, no veracidad); contenido como tarjetas (flashcards con la respuesta en un desplegable, o pasos numerados) o, con la vista **JSON**, la respuesta cruda con botón de descarga; y un desplegable "Detalles de la generación" (modelo, fragmentos, fecha en `APP_TIMEZONE`, estado de OCI).
+- **Errores:** API caída, timeout, 4xx (se muestra el mensaje del formato de error de la API) y 5xx se muestran en una tarjeta de error, nunca como stack traces. Después de un error, **Reintentar** conserva lo cargado. El botón se deshabilita mientras se genera.
 
 El cliente HTTP (`frontend/cliente_api.py`) y la lógica de formato (`frontend/formato.py`) no dependen de Streamlit y están cubiertos por `tests/test_frontend.py`.
 
@@ -297,6 +298,8 @@ nuevamente/
 │   ├── app.py                    # Interfaz Streamlit
 │   ├── cliente_api.py            # Cliente HTTP de la API (sin Streamlit)
 │   ├── formato.py                # Opciones, validación y formateo del resultado
+│   ├── componentes.py            # Bloques HTML (funciones puras)
+│   ├── estilos.py                # CSS de la interfaz
 │   └── config.py                 # API_BASE_URL, API_TIMEOUT_S, límites
 ├── docs/                         # Documentos fuente para indexar
 ├── scripts/
