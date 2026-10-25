@@ -8,6 +8,17 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
 
 
+@pytest.fixture(autouse=True)
+def minimo_de_caracteres_bajo(monkeypatch):
+    """
+    Los fixtures históricos son textos de pocas líneas. Se baja el mínimo de MIN_CHARS_DOCUMENTO para que
+    no choquen con la validación de largo; los tests de esa validación fijan su propio valor.
+    """
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "min_chars_documento", 1)
+
+
 @pytest.fixture
 def pdf_valido(tmp_path):
     """Un PDF de 2 páginas con texto real extraíble."""

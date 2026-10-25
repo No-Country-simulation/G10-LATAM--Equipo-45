@@ -35,7 +35,9 @@ from app.api.schemas import (
     SolicitudAdaptacion,
 )
 from app.config import settings
+from app.ingesta.models import DocumentoIngerido
 from app.ingesta.subida import ingerir_y_subir
+from app.ingesta.validacion import evaluar_contenido
 from app.llm.fidelidad import VerificadorDeFidelidad
 from app.llm.orquestador import Orquestador, ResultadoOrquestacion
 from app.llm.prompts import FormatoSalida
@@ -97,7 +99,9 @@ class ServicioDeAdaptacion:
         with tempfile.TemporaryDirectory(prefix="nuevamente_") as carpeta:
             with paso(logger, "guardar_entrada"):
                 ruta = self._escribir_entrada(Path(carpeta), solicitud)
-            documento, subida_original = ingerir_y_subir(ruta, self._almacenamiento)  # pasos: ingesta, subida_original
+            documento, subida_original = ingerir_y_subir(  # pasos: ingesta, subida_original
+                ruta, self._almacenamiento, validar=lambda doc: self._validar_contenido(doc, bool(nombre_archivo))
+            )
 
         if subida_original is None or documento.esta_vacio:
             raise ErrorDeEntrada(
@@ -150,6 +154,15 @@ class ServicioDeAdaptacion:
         return respuesta
 
     # --- Pasos internos ---
+
+    @staticmethod
+    def _validar_contenido(documento: DocumentoIngerido, es_archivo: bool) -> None:
+        """Rechaza (422) el texto sin contenido útil o demasiado corto, antes de subir el original y de llamar al LLM."""
+        problema = evaluar_contenido(documento.texto, settings.min_chars_documento)
+        if problema:
+            raise ErrorDeEntrada(
+                problema.mensaje, campo="archivo" if es_archivo else "documento_contenido", codigo=problema.codigo
+            )
 
     @staticmethod
     def _escribir_entrada(carpeta: Path, solicitud: SolicitudAdaptacion) -> Path:

@@ -20,6 +20,7 @@ from app.api.dependencias import obtener_servicio
 from app.api.main import app
 from app.api.schemas import SolicitudAdaptacion
 from app.api.servicio import ServicioDeAdaptacion
+from app.config import settings
 from app.llm import prompts
 from app.llm.fidelidad import VerificadorDeFidelidad
 from app.llm.gemini_client import ClienteGemini
@@ -301,6 +302,59 @@ class TestFidelidadDegradada:
         assert calidad["baja_confianza"] is True
         assert calidad["motivo"] == "no se pudo verificar la fidelidad"
         assert respuesta.json()["contenido_adaptado"]  # el contenido generado se entrega igual
+
+
+def _texto_de(n):
+    """Texto normal de exactamente n caracteres."""
+    base = "Las redes virtuales conectan recursos de la nube. "
+    return (base * (n // len(base) + 1))[: n - 1] + "a"
+
+
+class TestValidacionDeContenido:
+    """N4 / N5: se rechaza con 422 antes de subir a OCI y de llamar al LLM (un LLM llamado daría 500 con este fake)."""
+
+    @pytest.fixture(autouse=True)
+    def _minimo_real(self, monkeypatch):
+        monkeypatch.setattr(settings, "min_chars_documento", 200)
+
+    @pytest.mark.parametrize(
+        "texto, codigo",
+        [
+            ("asdnasdndneedc ad@####", "documento_sin_contenido_util"),
+            ("@#$%^&*() " * 100, "documento_sin_contenido_util"),
+            ("Hola, esto es una prueba", "documento_sin_contenido_util"),
+            (_texto_de(120), "documento_muy_corto"),
+            (_texto_de(199), "documento_muy_corto"),
+        ],
+    )
+    def test_rechaza_con_422(self, construir, oci_falso, texto, codigo):
+        cliente = construir(excepcion=AssertionError("el LLM no debe llamarse"))
+        respuesta = _post_texto(cliente, texto)
+
+        assert respuesta.status_code == 422
+        cuerpo = respuesta.json()
+        assert (cuerpo["status"], cuerpo["codigo"]) == ("error", codigo)
+        assert cuerpo["detalles"] == [{"campo": "documento_contenido", "problema": cuerpo["mensaje"]}]
+        assert oci_falso.objetos == {}  # ni el original ni el JSON se subieron
+
+    def test_mensaje_de_sin_contenido(self, construir):
+        mensaje = _post_texto(construir(), "asdnasdndneedc ad@####").json()["mensaje"]
+        assert mensaje == "El documento no contiene texto suficiente para adaptar. Subí un material con al menos algunos párrafos."
+
+    def test_en_el_limite_pasa(self, construir):
+        assert _post_texto(construir(), _texto_de(200)).status_code == 200
+
+    def test_un_archivo_corto_se_rechaza_y_apunta_al_campo_archivo(self, construir):
+        respuesta = construir().post(
+            "/api/v1/adaptar", data=_datos(), files={"archivo": ("a.txt", b"Hola, esto es una prueba")}
+        )
+        assert respuesta.status_code == 422
+        assert respuesta.json()["detalles"][0]["campo"] == "archivo"
+
+    def test_el_minimo_es_configurable(self, construir, monkeypatch):
+        monkeypatch.setattr(settings, "min_chars_documento", 100)
+        assert _post_texto(construir(), _texto_de(100)).status_code == 200
+        assert _post_texto(construir(), _texto_de(99)).status_code == 422
 
 
 class TestValidacionDeEntrada:

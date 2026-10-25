@@ -599,3 +599,32 @@ def test_la_app_muestra_el_error_sin_romper(app_sin_api):
     assert not at.exception
     assert "El modelo no respondió" in _textos(at)
     assert [b.label for b in at.button] == ["Generar contenido", "Reintentar"]
+
+
+@pytest.mark.parametrize("status", [413, 422])
+def test_un_4xx_no_ofrece_reintentar(app_sin_api, status):
+    mensaje = "El documento no contiene texto suficiente para adaptar. Subí un material con al menos algunos párrafos."
+    app_sin_api.session_state["fase"] = "fallo"
+    app_sin_api.session_state["error"] = ErrorDeApi(mensaje, cliente_api.VALIDACION, status)
+    at = app_sin_api.run()
+    assert not at.exception
+    assert mensaje in _textos(at)
+    assert "Reintentar" not in [b.label for b in at.button]
+
+
+@pytest.mark.parametrize(
+    "tipo, status", [(cliente_api.SERVIDOR, 503), (cliente_api.SERVIDOR, 502), (cliente_api.CONEXION, None), (cliente_api.TIMEOUT, None)]
+)
+def test_los_errores_de_servicio_y_conexion_si_ofrecen_reintentar(app_sin_api, tipo, status):
+    app_sin_api.session_state["fase"] = "fallo"
+    app_sin_api.session_state["error"] = ErrorDeApi("No disponible", tipo, status)
+    assert "Reintentar" in [b.label for b in app_sin_api.run().button]
+
+
+def test_solo_los_4xx_no_son_reintentables():
+    def error(status):
+        return httpx.Response(status, json={"status": "error", "codigo": "x", "mensaje": "m"})
+
+    assert not cliente_api._error_http(error(422)).reintentable
+    assert not cliente_api._error_http(error(413)).reintentable
+    assert all(cliente_api._error_http(error(s)).reintentable for s in (500, 502, 503, 504))

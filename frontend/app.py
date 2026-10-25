@@ -174,7 +174,8 @@ with col_resultado:
         _generar()
     elif ss.fase == FALLO and ss.error is not None:
         st.markdown(componentes.tarjeta_error(ss.error.mensaje, ss.error.detalles), unsafe_allow_html=True)
-        st.button("Reintentar", on_click=_lanzar)
+        if ss.error.reintentable:  # con un 4xx el mismo documento falla igual: hay que cambiar la entrada
+            st.button("Reintentar", on_click=_lanzar)
     elif ss.fase == LISTO and ss.resultado:
         _mostrar_resultado(ss.resultado)
     else:
