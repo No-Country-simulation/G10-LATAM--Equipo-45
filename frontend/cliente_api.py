@@ -21,6 +21,10 @@ MENSAJE_RESPUESTA_INVALIDA = "El servidor devolvió una respuesta que no pudimos
 CONEXION, TIMEOUT, VALIDACION, SERVIDOR = "conexion", "timeout", "validacion", "servidor"
 
 
+# Solo estos errores pueden resolverse reintentando con el mismo documento; un 4xx (VALIDACION) no.
+TIPOS_REINTENTABLES = (CONEXION, TIMEOUT, SERVIDOR)
+
+
 @dataclass
 class ErrorDeApi(Exception):
     mensaje: str
@@ -30,6 +34,10 @@ class ErrorDeApi(Exception):
 
     def __str__(self) -> str:
         return self.mensaje
+
+    @property
+    def reintentable(self) -> bool:
+        return self.tipo in TIPOS_REINTENTABLES
 
 
 def _cuerpo_de_error(respuesta: httpx.Response) -> dict | None:

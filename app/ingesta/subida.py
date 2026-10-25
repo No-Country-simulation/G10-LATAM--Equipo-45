@@ -7,6 +7,7 @@ en el bucket solo acumularía basura que nadie va a poder usar.
 """
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from app.ingesta.models import DocumentoIngerido
@@ -26,7 +27,7 @@ CONTENT_TYPES = {
 
 
 def ingerir_y_subir(
-    ruta: str | Path, almacenamiento: Almacenamiento
+    ruta: str | Path, almacenamiento: Almacenamiento, validar: Callable[[DocumentoIngerido], None] | None = None
 ) -> tuple[DocumentoIngerido, ResultadoSubida | None]:
     """
     Ingiere el archivo con el loader que corresponde a su extensión y sube el original.
@@ -37,6 +38,7 @@ def ingerir_y_subir(
 
     Raises:
         ErrorDeIngesta: archivo inexistente, corrupto o de extensión no soportada (no se sube nada).
+        Lo que lance `validar`: se invoca con el documento ya ingerido y no vacío, antes de subirlo (no se sube nada).
         ErrorDeAlmacenamiento: falló OCI y también el guardado local.
     """
     ruta = Path(ruta)
@@ -46,6 +48,9 @@ def ingerir_y_subir(
 
     if documento.esta_vacio:
         return documento, None
+
+    if validar is not None:
+        validar(documento)
 
     with paso(logger, "subida_original"):
         resultado = almacenamiento.subir_documento(ruta.name, ruta.read_bytes(), CONTENT_TYPES.get(extension))

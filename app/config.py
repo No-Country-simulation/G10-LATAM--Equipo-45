@@ -104,6 +104,15 @@ class Settings(BaseSettings):
         description="Extensiones de archivo aceptadas por el endpoint, separadas por coma",
     )
 
+    min_chars_documento: int = Field(
+        default=200,
+        ge=1,
+        description=(
+            "Largo mínimo, en caracteres (con el texto normalizado), de un documento para adaptarlo. "
+            "Por debajo: 422 'documento_muy_corto'. También fija las letras mínimas (un cuarto)"
+        ),
+    )
+
     # --- Backend ---
     app_env: Literal["dev", "test", "prod"] = Field(default="dev")
     log_level: str = Field(default="INFO")

@@ -174,7 +174,7 @@ Todos los errores tienen la misma forma, con mensajes en español y sin detalles
 
 | HTTP | `codigo` | Cuándo |
 |---|---|---|
-| 422 | `entrada_invalida`, `documento_ilegible`, `documento_sin_texto` | campo inválido o faltante, ni/ambos archivo y texto, extensión no soportada, archivo vacío, PDF corrupto o escaneado sin texto |
+| 422 | `entrada_invalida`, `documento_ilegible`, `documento_sin_texto`, `documento_sin_contenido_util`, `documento_muy_corto` | campo inválido o faltante, ni/ambos archivo y texto, extensión no soportada, archivo vacío, PDF corrupto o escaneado sin texto, texto sin contenido útil (letras < 40 % de los caracteres no blancos, o menos de 50 letras) o con menos de `MIN_CHARS_DOCUMENTO` caracteres (200 por defecto). Se rechaza antes de subir a OCI y de llamar a Gemini; la UI no ofrece "Reintentar" en los 4xx |
 | 413 | `documento_demasiado_grande` | el archivo o el texto supera `MAX_UPLOAD_MB` |
 | 502 | `respuesta_invalida_del_modelo` | Gemini no devolvió un JSON válido ni tras el reintento |
 | 503 | `servicio_no_disponible` | falla de Gemini (generación o embeddings): cuota, red, clave |
