@@ -273,6 +273,8 @@ Mediciones manuales del equipo, hechas con Gemini real (modelo `gemini-3.5-flash
 | P4 | Inyección de prompt resistida | 0.83 | 4,4 s | Ejecutado (manual) |
 | Negativos | 11 casos de entrada inválida (N1 a N11) | — | — | Ejecutado (manual): resultado esperado en los 11 |
 
+Respaldo de P1 a P3: las respuestas completas de tres escenarios (Principiante + Flashcards, Líder técnico + Guía práctica, Líder técnico + Flashcards) con el mismo documento están en [docs/ejemplos/](ejemplos/) (ej1 a ej3); son corridas independientes de la tabla, por eso los puntajes difieren. `ej4` es un caso aparte con un PDF (`01_que_es_rag.pdf`).
+
 Además del E2E anterior, se corrió `scripts/smoke_endpoint.py` contra la API real: 200 OK, `gemini-3.5-flash`, 6 flashcards, puntaje 0.8545. Los escenarios P1 a P4 y N1 a N11 se ejecutaron desde la interfaz Streamlit el 25/10/2026. Todo esto son mediciones del equipo, no tests automatizados.
 
 **Regresión del fallback en vivo.** En esa corrida `gemini-3.5-flash` respondió 503 y la app pasó sola a `gemini-3.5-flash-lite` (`intentos=2`, 14,7 s totales).
