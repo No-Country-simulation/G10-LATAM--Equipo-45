@@ -263,7 +263,7 @@ Los rechazos 422/413 ocurren antes de llamar a Gemini (los de contenido, tambié
 
 La suite automatizada (`pytest -q`, **518 tests**) no usa red ni credenciales: Gemini, embeddings y OCI se reemplazan por fakes. [docs/test_plan.md](docs/test_plan.md) lista cada caso con su estado (*Verificado* si hay un test que lo respalda; *Previsto* si no) y separa lo automatizado de lo manual. Áreas cubiertas: ingesta, pipeline RAG (chunking, embeddings, vector store), configuración, prompts, cliente de Gemini y fallback, orquestador, fidelidad, API y manejo de errores, almacenamiento OCI y frontend (incluido un humo de la UI con `streamlit.testing`).
 
-**Resultados E2E manuales del 25/10/2026** (modelo `gemini-3.5-flash-lite`, Gemini real; son mediciones del equipo, no las reproduce la suite automatizada porque gastan cuota):
+**Resultados E2E manuales del 25/10/2026** (Gemini real, modelo principal `gemini-3.5-flash-lite`; los ejemplos guardados en [docs/ejemplos/](docs/ejemplos/) son otras corridas, con `gemini-3.5-flash` en ej1, ej2 y ej4;)
 
 | Caso | Perfil + formato | Puntaje | Tiempo |
 |---|---|---|---|
@@ -274,6 +274,8 @@ La suite automatizada (`pytest -q`, **518 tests**) no usa red ni credenciales: G
 | Negativos | 11 casos de entrada inválida | resultado esperado en los 11 | — |
 
 **Regresión del fallback en vivo.** En esa corrida `gemini-3.5-flash` respondió 503 y la app pasó sola a `gemini-3.5-flash-lite` (`intentos=2`, 14,7 s totales). El mecanismo se describe en [docs/fallback.md](docs/fallback.md).
+
+Las respuestas completas de tres escenarios sobre el mismo documento (y de una corrida con un PDF) están guardadas en [docs/ejemplos/](docs/ejemplos/).
 
 ## 7. Limitaciones conocidas
 
@@ -338,13 +340,13 @@ Los 8 puntos del checklist de evaluación del hackathon y la evidencia que se pu
 
 | # | Requisito | Estado | Evidencia |
 |---|---|---|---|
-| 1 | Ingestión de PDF, Markdown y texto | Cumplido | `app/ingesta/pdf_loader.py` (pypdf), `app/ingesta/text_loader.py`, `app/ingesta/subida.py`; tests en `tests/test_ingesta.py` y `tests/test_subida.py`; el endpoint acepta `archivo` (.pdf, .md, .txt) o `documento_contenido` (texto) |
+| 1 | Ingestión de PDF, Markdown y texto | Cumplido | `app/ingesta/pdf_loader.py` (pypdf), `app/ingesta/text_loader.py`, `app/ingesta/subida.py`; tests en `tests/test_ingesta.py` y `tests/test_subida.py`; el endpoint acepta `archivo` (.pdf, .md, .txt) o `documento_contenido` (texto); corrida real con un PDF en [docs/ejemplos/ej4_pdf_rag_lider_flashcards.json](docs/ejemplos/ej4_pdf_rag_lider_flashcards.json) |
 | 2 | RAG con chunking, embeddings y búsqueda vectorial | Cumplido | `app/rag/chunking.py`, `app/rag/embeddings.py` (`gemini-embedding-001`), `app/rag/vector_store.py` (ChromaDB, métrica coseno); tests en `tests/test_chunking.py`, `test_embeddings.py`, `test_vector_store.py`; ver [docs/arquitectura.md](docs/arquitectura.md) |
 | 3 | Orquestación con LLM | Cumplido | `app/llm/orquestador.py` y `app/llm/gemini_client.py` (cadena de modelos con fallback); tests en `tests/test_orquestador.py` y `tests/test_fallback_modelos.py`. Es una cadena de prompts propia, no un grafo de agentes ni una cadena de LangChain (ver [limitaciones](#7-limitaciones-conocidas)) |
 | 4 | Mismo contenido adaptado a 2 perfiles y 2 formatos | Cumplido | `app/llm/prompts.py` define `Principiante` / `Lider Tecnico / Arquitecto` y `Flashcards` / `Guia Practica Paso a Paso` con prompts por combinación; `tests/test_prompts.py` verifica las 4 combinaciones; las corridas P1 a P3 de la [sección 6](#6-calidad-y-pruebas) las ejercitan con Gemini real (mediciones del equipo) |
 | 5 | Salida JSON e interfaz o API | Cumplido | API: `POST /api/v1/adaptar` (`app/api/main.py`, `app/api/schemas.py`; `tests/test_api.py`). Interfaz: `frontend/app.py` (Streamlit; `tests/test_frontend.py`). Descarga del JSON desde la UI |
 | 6 | Integración con OCI Object Storage (Always Free) | Cumplido (integración); el nivel Always Free no se puede comprobar desde el código | `app/oci/almacenamiento.py` sube el documento original (`documentos/`) y el JSON de salida (`salidas/`), con fallback a disco; `tests/test_almacenamiento.py` (cliente falso del SDK); `docs/test_plan.md` registra el smoke test `scripts/smoke_oci.py` contra el bucket real, corrido el 2026-10-20 (medición manual del equipo) |
-| 7 | Mínimo 3 ejemplos de ejecución | Documentado, sin salidas guardadas en el repo | La [sección 6](#6-calidad-y-pruebas) y la sección 7 de [docs/test_plan.md](docs/test_plan.md) registran 4 escenarios E2E (P1 a P4) del 25/10/2026, que son mediciones del equipo. El repo no incluye las respuestas completas de esas corridas; sí incluye un texto de ejemplo en `frontend/ejemplos.py` y `scripts/smoke_endpoint.py` para reproducir una |
+| 7 | Mínimo 3 ejemplos de ejecución | Cumplido | Tres escenarios sobre el mismo documento (ej1 a ej3: Principiante + Flashcards, Líder técnico + Guía práctica y Líder técnico + Flashcards) guardados como respuestas reales en [docs/ejemplos/](docs/ejemplos/), con su [README](docs/ejemplos/README.md); más las corridas E2E de la [sección 6](#6-calidad-y-pruebas) (mediciones del equipo) |
 | 8 | Documentación con diagrama de arquitectura | Cumplido | Diagrama Mermaid en la [sección 3](#3-arquitectura-y-tecnologías) y en [docs/arquitectura.md](docs/arquitectura.md); además [docs/fidelidad.md](docs/fidelidad.md), [docs/fallback.md](docs/fallback.md) y [docs/test_plan.md](docs/test_plan.md) |
 
 ## 12. Recursos opcionales cubiertos

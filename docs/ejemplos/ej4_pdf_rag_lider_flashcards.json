@@ -1,0 +1,63 @@
+{
+  "status": "ok",
+  "metadatos": {
+    "documento_titulo": "RAG",
+    "perfil_destinatario": "Lider Tecnico / Arquitecto",
+    "formato_salida": "Flashcards",
+    "nombre_archivo": "01_que_es_rag.pdf",
+    "fragmentos_usados": 5,
+    "nicho_sector": null,
+    "nivel_detalle": null,
+    "fecha_generacion": "2026-10-25T19:49:29.005028Z",
+    "modelo": "gemini-3.5-flash"
+  },
+  "contenido_adaptado": [
+    {
+      "pregunta": "¿Cómo aborda el patrón RAG la limitación de conocimiento y alucinaciones en un LLM?",
+      "respuesta": "RAG combina la generación del LLM con una fase de búsqueda sobre una fuente documental propia, inyectando los fragmentos relevantes como contexto dinámico en el prompt. Esto ancla la respuesta a documentación concreta (como manuales o arquitectura interna) sin requerir reentrenamiento del modelo."
+    },
+    {
+      "pregunta": "¿Cuáles son las cinco etapas secuenciales del pipeline de datos en un sistema RAG?",
+      "respuesta": "El pipeline se compone de: 1) Ingesta (extracción de texto plano), 2) Chunking (división en fragmentos manejables), 3) Vectorización/Embeddings (transformación a espacio vectorial), 4) Búsqueda semántica (recuperación por cercanía vectorial) y 5) Generación (inferencia del LLM con contexto e instrucciones)."
+    },
+    {
+      "pregunta": "¿Cuál es la función técnica de la superposición (overlap) en la fase de chunking?",
+      "respuesta": "La superposición entre fragmentos contiguos evita que se dividan o pierdan ideas completas en los límites de segmentación. Al mantener este contexto compartido en bloques de unos cientos de palabras, se preserva la continuidad semántica del documento."
+    },
+    {
+      "pregunta": "¿Dónde se persisten los vectores y qué opciones existen para proyectos pequeños o medianos?",
+      "respuesta": "Los embeddings se almacenan y consultan en bases de datos vectoriales especializadas. Para arquitecturas de escala pequeña o mediana, soluciones como ChromaDB y FAISS son opciones comúnmente integradas."
+    },
+    {
+      "pregunta": "¿Qué riesgos de calidad existen si la fase de recuperación o los datos de origen fallan?",
+      "respuesta": "Si el mecanismo de búsqueda recupera contextos de baja relevancia, la calidad del output del LLM se degrada significativamente. Adicionalmente, el sistema propagará de forma fiel cualquier error explícito presente en la documentación fuente ingerida."
+    },
+    {
+      "pregunta": "¿Por qué las métricas de similitud vectorial no garantizan la precisión factual de la respuesta?",
+      "respuesta": "Las métricas de distancia en el espacio vectorial miden si dos textos abordan la misma temática conceptual, pero carecen de capacidad para verificar la veracidad intrínseca de los datos contenidos en el texto recuperado."
+    },
+    {
+      "pregunta": "¿Qué buenas prácticas de gobernanza, seguridad y control de calidad deben aplicarse en un pipeline RAG?",
+      "respuesta": "Se debe auditar el texto extraído (evaluando PDFs escaneados), mantener el archivo original para trazabilidad, establecer un umbral de confianza para derivar respuestas dudosas a revisión humana y proscribir el ingreso de credenciales de acceso o datos personales (PII) al almacenamiento."
+    }
+  ],
+  "evaluacion_calidad": {
+    "anclaje_fuente_score": 0.843686974731369,
+    "baja_confianza": false,
+    "umbral": 0.72,
+    "motivo": null,
+    "claridad_pedagogica": null
+  },
+  "almacenamiento_oci": {
+    "documento_original": {
+      "bucket": "nuevamente-documentos",
+      "objeto_id": "documentos/20261025T194912985677Z-01_que_es_rag.pdf",
+      "status_upload": "exito"
+    },
+    "salida_json": {
+      "bucket": "nuevamente-documentos",
+      "objeto_id": "salidas/20261025T194929011185Z-adaptacion-01_que_es_rag.json",
+      "status_upload": "exito"
+    }
+  }
+}

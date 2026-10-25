@@ -1,0 +1,57 @@
+{
+  "status": "ok",
+  "metadatos": {
+    "documento_titulo": "Redes virtuales en Oracle Cloud Infrastructure (OCI)",
+    "perfil_destinatario": "Lider Tecnico / Arquitecto",
+    "formato_salida": "Guia Practica Paso a Paso",
+    "nombre_archivo": null,
+    "fragmentos_usados": 3,
+    "nicho_sector": null,
+    "nivel_detalle": null,
+    "fecha_generacion": "2026-10-25T19:47:55.497383Z",
+    "modelo": "gemini-3.5-flash"
+  },
+  "contenido_adaptado": {
+    "pasos": [
+      {
+        "titulo": "Definir la VCN y documentar el esquema de direccionamiento IP",
+        "detalle": "Establecer la Virtual Cloud Network (VCN) como red privada e aislada. Definir los rangos de direcciones IP y documentarlos explícitamente para prevenir solapamientos con otras redes al realizar interconexiones."
+      },
+      {
+        "titulo": "Segmentar la VCN en subredes públicas y privadas según la carga de trabajo",
+        "detalle": "Crear subredes públicas para recursos que requieran direccionamiento IP público y comunicación bidireccional con internet (como balanceadores de carga y servidores web). Crear subredes privadas para aislar bases de datos y servidores internos de cualquier acceso directo desde internet."
+      },
+      {
+        "titulo": "Implementar los Gateways de conectividad según el patrón de tráfico",
+        "detalle": "Asociar un Internet Gateway para permitir tráfico desde y hacia internet en subredes públicas. Habilitar un NAT Gateway para proveer salida a internet a recursos privados (por ejemplo, para descarga de actualizaciones) sin aceptar conexiones entrantes. Configurar un Service Gateway para enrutar el tráfico hacia servicios nativos de Oracle (como Object Storage) de forma privada sin pasar por internet."
+      },
+      {
+        "titulo": "Configurar el control de acceso a nivel de red con Security Lists y NSGs",
+        "detalle": "Aplicar Security Lists para definir reglas de tráfico a nivel de subred completa. Desplegar Network Security Groups (NSG) para aplicar políticas específicas a recursos seleccionados. Aplicar el principio de mínimo privilegio habilitando estrictamente los puertos necesarios (como el puerto 443 para HTTPS)."
+      },
+      {
+        "titulo": "Establecer un ciclo de auditoría y limpieza de reglas de seguridad",
+        "detalle": "Revisar periódicamente las reglas de tráfico definidas en las Security Lists y los NSGs para identificar y eliminar de forma continua las reglas en desuso."
+      }
+    ]
+  },
+  "evaluacion_calidad": {
+    "anclaje_fuente_score": 0.871226656740269,
+    "baja_confianza": false,
+    "umbral": 0.72,
+    "motivo": null,
+    "claridad_pedagogica": null
+  },
+  "almacenamiento_oci": {
+    "documento_original": {
+      "bucket": "nuevamente-documentos",
+      "objeto_id": "documentos/20261025T194743020802Z-documento.txt",
+      "status_upload": "exito"
+    },
+    "salida_json": {
+      "bucket": "nuevamente-documentos",
+      "objeto_id": "salidas/20261025T194755505987Z-adaptacion-documento.json",
+      "status_upload": "exito"
+    }
+  }
+}

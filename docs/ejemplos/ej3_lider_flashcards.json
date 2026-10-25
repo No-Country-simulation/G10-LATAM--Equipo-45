@@ -1,0 +1,63 @@
+{
+  "status": "ok",
+  "metadatos": {
+    "documento_titulo": "Redes virtuales en Oracle Cloud Infrastructure (OCI)",
+    "perfil_destinatario": "Lider Tecnico / Arquitecto",
+    "formato_salida": "Flashcards",
+    "nombre_archivo": null,
+    "fragmentos_usados": 3,
+    "nicho_sector": null,
+    "nivel_detalle": null,
+    "fecha_generacion": "2026-10-25T19:54:17.783068Z",
+    "modelo": "gemini-3.5-flash-lite"
+  },
+  "contenido_adaptado": [
+    {
+      "pregunta": "¿Qué es una Virtual Cloud Network (VCN) en OCI?",
+      "respuesta": "Es una red privada y aislada dentro de Oracle Cloud donde operan los recursos tecnológicos, funcionando de forma similar a un centro de datos virtual propio. Por defecto, ningún recurso dentro de una VCN es accesible desde el exterior salvo que se habilite explícitamente."
+    },
+    {
+      "pregunta": "¿Cuál es la diferencia arquitectónica entre una subred pública y una privada en OCI?",
+      "respuesta": "Una subred pública permite que los recursos tengan direcciones IP públicas y conectividad con internet, siendo ideal para balanceadores de carga o servidores web. Una subred privada aísla sus recursos de internet y se utiliza típicamente para bases de datos y servidores internos."
+    },
+    {
+      "pregunta": "¿Para qué se utiliza el Internet Gateway en una VCN?",
+      "respuesta": "Permite el flujo de tráfico bidireccional entre la VCN e internet exclusivamente para los recursos ubicados en subredes públicas."
+    },
+    {
+      "pregunta": "¿Cuál es el propósito del NAT Gateway en la arquitectura de red de OCI?",
+      "respuesta": "Permite que los recursos alojados en una subred privada inicien conexiones salientes hacia internet (como la descarga de actualizaciones), bloqueando al mismo tiempo cualquier intento de conexión entrante desde el exterior."
+    },
+    {
+      "pregunta": "¿Qué función cumple el Service Gateway dentro de una VCN?",
+      "respuesta": "Permite el acceso a servicios de Oracle, tales como Object Storage, desde la VCN sin necesidad de atravesar internet, optimizando la seguridad y el rendimiento del tráfico."
+    },
+    {
+      "pregunta": "¿Cómo difieren las Security Lists y los Network Security Groups (NSG) en el control de tráfico?",
+      "respuesta": "Una Security List aplica sus reglas de filtrado de tráfico a nivel de toda la subred y sus instancias, mientras que un NSG se asocia únicamente a los recursos específicos seleccionados, permitiendo definir reglas de seguridad mucho más granulares."
+    },
+    {
+      "pregunta": "¿Qué buena práctica se recomienda respecto al diseño de subredes y conectividad saliente para bases de datos?",
+      "respuesta": "Se debe mantener siempre a las bases de datos albergadas en subredes privadas y, en caso de requerir acceso a internet para descargas o actualizaciones, utilizar un NAT Gateway en lugar de exponerlas públicamente."
+    }
+  ],
+  "evaluacion_calidad": {
+    "anclaje_fuente_score": 0.8568264040889385,
+    "baja_confianza": false,
+    "umbral": 0.72,
+    "motivo": null,
+    "claridad_pedagogica": null
+  },
+  "almacenamiento_oci": {
+    "documento_original": {
+      "bucket": "nuevamente-documentos",
+      "objeto_id": "documentos/20261025T195349148871Z-documento.txt",
+      "status_upload": "exito"
+    },
+    "salida_json": {
+      "bucket": "nuevamente-documentos",
+      "objeto_id": "salidas/20261025T195417787369Z-adaptacion-documento.json",
+      "status_upload": "exito"
+    }
+  }
+}

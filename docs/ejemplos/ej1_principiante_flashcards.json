@@ -1,0 +1,67 @@
+{
+  "status": "ok",
+  "metadatos": {
+    "documento_titulo": "Redes virtuales en Oracle Cloud Infrastructure (OCI)",
+    "perfil_destinatario": "Principiante",
+    "formato_salida": "Flashcards",
+    "nombre_archivo": null,
+    "fragmentos_usados": 3,
+    "nicho_sector": null,
+    "nivel_detalle": null,
+    "fecha_generacion": "2026-10-25T19:44:53.642337Z",
+    "modelo": "gemini-3.5-flash"
+  },
+  "contenido_adaptado": [
+    {
+      "pregunta": "¿Qué es una VCN (Virtual Cloud Network) en OCI?",
+      "respuesta": "Una VCN es una red privada y aislada dentro de Oracle Cloud donde viven tus recursos tecnológicos, similar a un centro de datos virtual propio. Te permite definir tu propio rango de direcciones IP y reglas de tráfico. Por seguridad, nada dentro de una VCN es accesible desde el exterior salvo que lo habilites explícitamente."
+    },
+    {
+      "pregunta": "¿Qué es una subred pública y cuándo se utiliza?",
+      "respuesta": "Es una división de una VCN que permite a los recursos tener direcciones IP públicas y comunicarse libremente con internet. Se utiliza para componentes que necesitan estar de cara al exterior, como un servidor web o un balanceador de carga."
+    },
+    {
+      "pregunta": "¿Qué es una subred privada y para qué sirve?",
+      "respuesta": "Es una sección dentro de una VCN que aísla sus recursos para que nadie pueda acceder a ellos directamente desde internet. Es el lugar ideal para alojar componentes internos y sensibles que requieren mayor protección, como las bases de datos."
+    },
+    {
+      "pregunta": "¿Qué función cumple un Internet Gateway?",
+      "respuesta": "Es un puente de conexión que permite el tráfico de red de entrada y salida entre internet y tu VCN. Se utiliza exclusivamente para que los recursos ubicados en subredes públicas puedan comunicarse con el exterior."
+    },
+    {
+      "pregunta": "¿Para qué sirve un NAT Gateway?",
+      "respuesta": "Permite que los recursos de una subred privada salgan hacia internet para realizar tareas como descargar actualizaciones de software. Su ventaja principal es que realiza esta salida sin exponer al recurso a recibir conexiones entrantes desde el exterior."
+    },
+    {
+      "pregunta": "¿Qué es un Service Gateway y cuál es su beneficio?",
+      "respuesta": "Es un componente que conecta tus recursos en la VCN de forma directa con los servicios internos de Oracle, como Object Storage. Su beneficio principal es que te permite acceder a estos servicios de la nube sin tener que pasar por la red pública de internet."
+    },
+    {
+      "pregunta": "¿Cuál es la diferencia entre una Security List y un Network Security Group (NSG)?",
+      "respuesta": "Ambos controlan el tráfico entrante y saliente, pero difieren en su alcance. Una Security List aplica sus reglas de seguridad a todos los recursos alojados en una subred entera, mientras que un NSG se aplica solo a los recursos específicos que vos selecciones."
+    },
+    {
+      "pregunta": "¿En qué consiste el principio de mínimo privilegio en redes?",
+      "respuesta": "Es una buena práctica de seguridad que consiste en abrir únicamente los puertos y accesos que sean estrictamente necesarios para el funcionamiento del sistema. Un ejemplo es habilitar solo el puerto 443 para el tráfico web seguro (HTTPS) y mantener todo lo demás cerrado."
+    }
+  ],
+  "evaluacion_calidad": {
+    "anclaje_fuente_score": 0.8506371961990427,
+    "baja_confianza": false,
+    "umbral": 0.72,
+    "motivo": null,
+    "claridad_pedagogica": null
+  },
+  "almacenamiento_oci": {
+    "documento_original": {
+      "bucket": "nuevamente-documentos",
+      "objeto_id": "documentos/20261025T194437941088Z-documento.txt",
+      "status_upload": "exito"
+    },
+    "salida_json": {
+      "bucket": "nuevamente-documentos",
+      "objeto_id": "salidas/20261025T194453644527Z-adaptacion-documento.json",
+      "status_upload": "exito"
+    }
+  }
+}
