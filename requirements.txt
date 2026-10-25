@@ -22,7 +22,7 @@ langchain-community==0.3.8
 # --- OCI (previsto Semana 3+) ---
 oci==2.143.1
 
-# --- Frontend (previsto Semana 3+) ---
+# --- Frontend (usado hoy: frontend/app.py; el cliente HTTP usa httpx, ya fijado más abajo, y la config pydantic-settings) ---
 streamlit==1.40.2
 
 # --- QA / Tests: usado hoy ---

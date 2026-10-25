@@ -205,7 +205,39 @@ Los casos automatizados usan un cliente falso del SDK (sin red ni credenciales);
 | Script de reconciliación (subir lo `pendiente_oci`) | — | Previsto | Deuda: no implementado todavía |
 | Smoke test contra el bucket real (NM-05): validar config, subir, descargar y comparar, listar y borrar `smoke/<timestamp>.txt` | Manual | Verificado — `python scripts/smoke_oci.py`, corrido el 2026-10-20 contra el bucket `nuevamente-documentos`: TODO OK (subida, descarga, listado y borrado). Requiere bucket, política IAM y `~/.oci/config` |
 
-## 5. Manual vs. automatizado — criterio general
+## 5. Frontend Streamlit (NM-25, NM-26, NM-27)
+
+Sin red ni Streamlit en ejecución: el cliente se prueba con `httpx.MockTransport` y la lógica de formato
+son funciones puras. La UI solo tiene un humo con `streamlit.testing.v1.AppTest`.
+
+| Caso | Tipo | Estado | Dónde |
+|---|---|---|---|
+| Mapeo etiquetas → valores del enum (`PerfilDestinatario`, `FormatoSalida` importados de `app.api.schemas`): si el backend cambia, falla | Automatizado | Verificado | `tests/test_frontend.py::TestMapeoConEnumsDelBackend` |
+| Límite de tamaño y extensiones de la UI = los del backend por defecto | Automatizado | Verificado | `TestMapeoConEnumsDelBackend::test_la_validacion_usa_los_mismos_limites_que_el_backend_por_defecto` |
+| Cliente: éxito, y envía los valores del enum y el título; archivo como multipart | Automatizado | Verificado | `TestClienteApi::test_exito_*`, `test_envia_archivo_como_multipart` |
+| Cliente: 422 muestra mensaje y detalles del formato de error de la API; 413 como validación; 4xx sin ese formato no copia el cuerpo crudo | Automatizado | Verificado | `TestClienteApi::test_422_*`, `test_413_*`, `test_4xx_sin_formato_*` |
+| Cliente: 502/503/504 → mensaje claro del modelo; 500 → mensaje de la API o genérico | Automatizado | Verificado | `TestClienteApi::test_errores_del_modelo_*`, `test_500_*` |
+| Cliente: timeout y API caída (ConnectError) → `ErrorDeApi` sin texto técnico; 200 con cuerpo inválido controlado | Automatizado | Verificado | `TestClienteApi::test_timeout`, `test_api_caida`, `test_200_con_cuerpo_invalido_*` |
+| Timeout por defecto del cliente (150 s) supera el peor caso del backend (`GEMINI_TIMEOUT_TOTAL_S`) | Automatizado | Verificado | `TestClienteApi::test_el_timeout_por_defecto_supera_el_peor_caso_del_backend` |
+| Validación previa: texto vacío, archivo vacío, extensión inválida, tamaño (bytes UTF-8) | Automatizado | Verificado | `TestValidarEntrada` |
+| Formateo: flashcards, guía, contenido malformado, score `null` → "No disponible", fecha UTC | Automatizado | Verificado | `TestFormateo` |
+| El estado de OCI no expone bucket ni `objeto_id`; JSON con tildes; nombre de descarga seguro | Automatizado | Verificado | `TestFormateo::test_almacenamiento_*`, `test_json_formateado_*`, `test_nombre_de_descarga_es_seguro` |
+| La app arranca (AppTest) con la API mockeada, sin llamarla al cargar | Automatizado | Verificado | `test_la_app_arranca_con_la_api_mockeada` |
+| Helpers visuales: porcentaje de la barra (0, 0.72, 1, null, fuera de rango), píldora de confianza con texto, contador de caracteres, etiqueta del enum | Automatizado | Verificado | `TestHelpersVisuales` |
+| Fecha en `America/Asuncion`, en UTC y con zona inválida (cae a UTC y lo dice en la etiqueta); zona por defecto de la config | Automatizado | Verificado | `TestHelpersVisuales::test_fecha_*`, `test_la_zona_por_defecto_de_la_config_es_asuncion` |
+| Tarjeta de score: normal, baja confianza (aviso), score `null` sin barra ni romper; el contenido del modelo se escapa en el HTML; encabezado sin "Maqueta" | Automatizado | Verificado | `TestComponentes` |
+| Humo AppTest: estado vacío, resultado de flashcards, guía con score `null` y baja confianza, tarjeta de error con Reintentar (los de resultado precargan el estado: AppTest 1.40 no soporta una segunda corrida con el `st.segmented_control` de la vista) | Automatizado | Verificado | `test_la_app_arranca_en_estado_vacio`, `test_la_app_muestra_*` |
+| CSS del uploader en español con el límite real (`MAX_UPLOAD_MB`, extensiones), sanitizado; tarjetas con `box-sizing: border-box` | Automatizado | Verificado | `TestEstilos` |
+| Sin desborde en las tarjetas y textos del uploader en español en el navegador (selectores ligados al DOM de Streamlit 1.40.2) | Manual | Previsto | Revisión visual |
+| Perfil y formato elegidos en los selectbox llegan a la API con los valores exactos del enum (cliente mockeado) | Automatizado | Verificado | `test_elegir_perfil_y_formato_envia_los_valores_del_enum_a_la_api` |
+| Encabezado con el título exacto "NuevaMente - Adaptación de contenido educativo" y su subtítulo; marca de umbral sobre la barra (posición con los mismos límites que el score), texto "Umbral mínimo", sin marca si el umbral es null | Automatizado | Verificado | `TestComponentes::test_el_encabezado_no_trae_la_pildora_maqueta`, `TestMarcaDeUmbral` |
+| CSS: tarjeta de score y tarjetas internas sin desborde (`box-sizing`, `flex-wrap`, `overflow-wrap`), JSON con scroll horizontal, contador `InputInstructions` oculto, foco solo en el contenedor del input/textarea | Automatizado | Verificado | `TestEstilos` |
+| Sin desborde de la tarjeta de score ni de textos largos; marca del umbral bien ubicada; sin doble borde ni contador superpuesto en el campo Título | Manual | Previsto | Revisión visual |
+| Flujo completo en el navegador (cargar, generar, ver resultado, descargar JSON, reintentar tras un error, botón deshabilitado mientras genera) | Manual | Previsto | `uvicorn` + `streamlit run frontend/app.py` con Gemini real; gasta cuota |
+| Subir archivo (PDF/MD/TXT) desde la UI | Manual | Previsto | `AppTest` de esta versión de Streamlit no soporta `file_uploader` |
+| Estética contra el prototipo: colores, tipografías (Poppins / JetBrains Mono), selectores segmentados, barra de score, foco visible (outline magenta), apilado en pantallas angostas, CSS enganchado a `data-testid` de Streamlit 1.40.2 | Manual | Previsto | Revisión visual en el navegador; no se pudo verificar en esta entrega |
+
+## 6. Manual vs. automatizado — criterio general
 
 - **Automatizado**: cualquier caso que no dependa de un servicio externo real
   (red, credenciales) y que tenga una entrada/salida determinística. Vive en
