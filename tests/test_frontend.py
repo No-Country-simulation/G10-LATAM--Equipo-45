@@ -3,6 +3,8 @@ NM-25 / NM-26 / NM-27 — Tests del frontend. Sin red (httpx.MockTransport) y si
 salvo un humo con AppTest que solo comprueba que la app arranca.
 """
 
+import csv
+import io
 import json
 from urllib.parse import parse_qs
 
@@ -11,7 +13,7 @@ import pytest
 
 from app.api.schemas import FormatoSalida, PerfilDestinatario
 from app.config import settings
-from frontend import cliente_api, componentes, formato
+from frontend import cliente_api, componentes, ejemplos, formato
 from frontend.cliente_api import ErrorDeApi, adaptar
 
 PERFIL = "Principiante"
@@ -255,8 +257,8 @@ class TestFormateo:
         assert json.loads(texto) == EXITO
 
     def test_nombre_de_descarga_es_seguro(self):
-        assert formato.nombre_descarga({"metadatos": {"documento_titulo": "../../etc/passwd"}}) == "nuevamente_etc_passwd.json"
-        assert formato.nombre_descarga({}) == "nuevamente_resultado.json"
+        assert formato.nombre_descarga({"metadatos": {"documento_titulo": "../../etc/passwd"}}) == "nuevamente-etc-passwd.json"
+        assert formato.nombre_descarga({}) == "nuevamente-resultado.json"
 
 
 class TestMarcaDeUmbral:
@@ -541,7 +543,7 @@ def test_la_app_arranca_en_estado_vacio(app_sin_api):
     assert "NuevaMente - Adaptación de contenido educativo" in texto
     assert "Material educativo, adaptado a cada perfil y verificado" in texto
     assert "Todavía no hay resultado" in texto
-    assert [b.label for b in at.button] == ["Generar contenido"]
+    assert [b.label for b in at.button] == ["Usar texto de ejemplo", "Generar contenido"]
     assert [sb.label for sb in at.selectbox] == ["Perfil de quien lo va a usar", "Formato de salida"]
     assert list(at.selectbox[0].options) == ["Principiante", "Líder técnico / Arquitecto"]
     assert list(at.selectbox[1].options) == ["Flashcards", "Guía práctica paso a paso"]
@@ -563,7 +565,7 @@ def test_elegir_perfil_y_formato_envia_los_valores_del_enum_a_la_api(monkeypatch
     at.text_area[0].set_value("Una VCN es una red privada.").run()
     at.selectbox[0].select("Líder técnico / Arquitecto").run()
     at.selectbox[1].select("Guía práctica paso a paso").run()
-    at.button[0].click().run()
+    [b for b in at.button if b.label == "Generar contenido"][0].click().run()
 
     assert not at.exception
     assert len(llamadas) == 1
@@ -598,33 +600,247 @@ def test_la_app_muestra_el_error_sin_romper(app_sin_api):
     at = app_sin_api.run()
     assert not at.exception
     assert "El modelo no respondió" in _textos(at)
-    assert [b.label for b in at.button] == ["Generar contenido", "Reintentar"]
+    assert [b.label for b in at.button] == ["Usar texto de ejemplo", "Generar contenido", "Reintentar"]
 
 
-@pytest.mark.parametrize("status", [413, 422])
-def test_un_4xx_no_ofrece_reintentar(app_sin_api, status):
-    mensaje = "El documento no contiene texto suficiente para adaptar. Subí un material con al menos algunos párrafos."
-    app_sin_api.session_state["fase"] = "fallo"
-    app_sin_api.session_state["error"] = ErrorDeApi(mensaje, cliente_api.VALIDACION, status)
+# --------------------------------------------------------------------------------------
+# Usabilidad: ejemplo, nota, slider, descargas, tiempo
+# --------------------------------------------------------------------------------------
+
+CALIDAD_OK = {"anclaje_fuente_score": 0.83, "baja_confianza": False, "umbral": 0.72}
+
+
+class TestEjemplo:
+    def test_el_ejemplo_respeta_el_limite_de_la_ui(self):
+        from frontend.config import ConfigFrontend
+
+        config = ConfigFrontend(_env_file=None)
+        assert formato.validar_entrada(texto=ejemplos.TEXTO_EJEMPLO, archivo=None, max_bytes=config.max_upload_bytes, extensiones=config.extensiones_archivo) == []
+        assert len(ejemplos.TITULO_EJEMPLO) <= 200  # el campo Título tiene max_chars=200
+
+    def test_el_ejemplo_es_el_pedido(self):
+        assert ejemplos.TITULO_EJEMPLO == "Redes virtuales en Oracle Cloud Infrastructure (OCI)"
+        assert ejemplos.TEXTO_EJEMPLO.startswith("Redes virtuales en Oracle Cloud Infrastructure (OCI)\n\nUna Virtual Cloud Network (VCN)")
+        assert ejemplos.TEXTO_EJEMPLO.endswith("eliminá las que ya no se usen.")
+        for seccion in ("Subredes públicas y privadas", "Componentes de conectividad", "Seguridad de red", "Buenas prácticas"):
+            assert seccion in ejemplos.TEXTO_EJEMPLO
+
+
+class TestExplicacionDeLaNota:
+    def _texto(self, calidad, unidades=4, fragmentos=3):
+        return "\n".join(formato.explicacion_nota(calidad, unidades, fragmentos))
+
+    def test_explica_el_calculo_y_la_linea_dinamica(self):
+        texto = self._texto(CALIDAD_OK)
+        assert "se toma la similitud más alta" in texto and "promedio de esas similitudes" in texto
+        assert "En este resultado se compararon 4 unidades contra 3 fragmentos del documento." in texto
+        assert "no verifica" in texto and "Revisá siempre contra la fuente" in texto
+        assert "por debajo del umbral" not in texto
+
+    def test_singular(self):
+        assert "se compararon 1 unidad contra 1 fragmento del documento." in self._texto(CALIDAD_OK, 1, 1)
+
+    @pytest.mark.parametrize("unidades,fragmentos", [(0, 3), (4, 0), (4, None), (4, "3"), (4, True)])
+    def test_sin_datos_para_la_linea_dinamica_se_omite(self, unidades, fragmentos):
+        assert "se compararon" not in self._texto(CALIDAD_OK, unidades, fragmentos)
+
+    def test_baja_confianza_agrega_el_aviso(self):
+        assert "La nota quedó por debajo del umbral" in self._texto(CALIDAD_OK | {"baja_confianza": True})
+
+    def test_score_null_explica_sin_inventar_causas_ni_numeros(self):
+        texto = self._texto({"anclaje_fuente_score": None, "baja_confianza": True, "umbral": 0.72})
+        assert "no se pudo calcular la nota" in texto and "servicio de embeddings" in texto
+        assert "se compararon" not in texto and "promedio" not in texto
+
+    @pytest.mark.parametrize("calidad", [CALIDAD_OK, CALIDAD_OK | {"baja_confianza": True}, {"anclaje_fuente_score": None, "baja_confianza": False}])
+    def test_nunca_presenta_la_nota_como_verdad_ni_porcentaje(self, calidad):
+        texto = self._texto(calidad).lower()
+        assert "coincidencia factual" not in texto and "%" not in texto and "aciertos" not in texto and "porcentaje" not in texto
+
+    def test_unidades(self):
+        assert formato.unidades_de([{"pregunta": "p", "respuesta": "r"}] * 3) == 3
+        assert formato.unidades_de({"pasos": [{"titulo": "t", "detalle": "d"}] * 2}) == 2
+        assert formato.unidades_de(None) == 0
+
+
+class TestUmbralDelSlider:
+    @pytest.mark.parametrize("umbral,esperado", [(0.72, 0.72), (0.7249, 0.72), (0.3, 0.5), (0.99, 0.95), (None, None), ("x", None)])
+    def test_valor_inicial(self, umbral, esperado):
+        assert formato.umbral_para_slider(umbral) == esperado
+
+    def test_comparacion_con_el_umbral_propio(self):
+        assert formato.comparacion_umbral(0.83, 0.90, propio=True) == ("debajo", "Con tu umbral (0.90): queda por debajo")
+        assert formato.comparacion_umbral(0.83, 0.80, propio=True) == ("supera", "Con tu umbral (0.80): lo supera")
+
+    def test_la_tarjeta_mueve_la_marca_y_la_frase_pero_no_la_pildora(self):
+        html = componentes.tarjeta_score(CALIDAD_OK, 0.90)
+        assert 'class="nm-marca" style="left:90.0%"' in html and "Tu umbral 0.90" in html
+        assert "Con tu umbral (0.90): queda por debajo" in html
+        assert "Confianza normal" in html and "nm-aviso" not in html  # lo oficial sigue reflejando a la API
+        oficial = componentes.tarjeta_score(CALIDAD_OK, 0.72)
+        assert "Supera el umbral mínimo (0.72)" in oficial and "Tu umbral" not in oficial
+
+
+class TestDescargas:
+    def test_csv_escapa_comas_comillas_y_saltos_de_linea(self):
+        filas = list(csv.reader(io.StringIO(formato.csv_flashcards([("¿a, b?", 'dijo "hola"\nen dos líneas')]))))
+        assert filas == [["¿a, b?", 'dijo "hola"\nen dos líneas']]
+
+    def test_csv_conserva_tildes_y_es_utf8(self):
+        texto = formato.csv_flashcards([("¿Qué es una VCN?", "Una red privada, ñandú.")])
+        assert "¿Qué es una VCN?" in texto and texto.encode("utf-8").decode("utf-8") == texto
+
+    @pytest.mark.parametrize("celda", ["=1+1", "+cmd", "-2", "@SUMA(A1)", "\t=1"])
+    def test_csv_neutraliza_formulas_en_cualquiera_de_las_dos_columnas(self, celda):
+        pregunta, respuesta = list(csv.reader(io.StringIO(formato.csv_flashcards([(celda, celda)]))))[0]
+        assert pregunta == "'" + celda and respuesta == "'" + celda
+
+    def test_csv_no_toca_celdas_normales(self):
+        assert list(csv.reader(io.StringIO(formato.csv_flashcards([("a=b", "c-d")])))) == [["a=b", "c-d"]]
+
+    def test_csv_lista_vacia(self):
+        assert formato.csv_flashcards([]) == ""
+
+    def test_markdown_de_la_guia(self):
+        texto = formato.markdown_guia("Mi guía", [("Crear la VCN", "Entrá a la consola."), ("Subredes", "Una pública.\nUna privada.")])
+        assert texto == "# Mi guía\n\n## 1. Crear la VCN\n\nEntrá a la consola.\n\n## 2. Subredes\n\nUna pública.\nUna privada.\n"
+
+    def test_markdown_con_titulo_vacio_o_multilinea_y_sin_pasos(self):
+        assert formato.markdown_guia("", []).startswith("# Guía práctica\n")
+        assert formato.markdown_guia(None, []).startswith("# Guía práctica\n")
+        assert formato.markdown_guia("Uno\ndos", []).startswith("# Uno dos\n")
+
+    @pytest.mark.parametrize(
+        "titulo,esperado",
+        [
+            ("Redes virtuales en OCI", "Redes-virtuales-en-OCI"),
+            ("¿Qué es una VCN? (guía)", "Que-es-una-VCN-guia"),
+            ("../../etc/passwd", "etc-passwd"),
+            ("a/b\\c:d*e?\"f<g>h|i", "a-b-c-d-e-f-g-h-i"),
+            ("", "resultado"),
+            (None, "resultado"),
+            ("¡¡¡???", "resultado"),
+            ("日本語", "resultado"),
+        ],
+    )
+    def test_nombre_saneado(self, titulo, esperado):
+        assert formato.slug_titulo(titulo) == esperado
+
+    def test_el_nombre_es_acotado_y_lleva_la_extension(self):
+        nombre = formato.nombre_descarga({"metadatos": {"documento_titulo": "x" * 500}}, "csv")
+        assert nombre == "nuevamente-" + "x" * 60 + ".csv"
+        assert formato.nombre_descarga({"metadatos": {"documento_titulo": "Guía OCI"}}, "md") == "nuevamente-Guia-OCI.md"
+
+
+class TestTiempoYChip:
+    @pytest.mark.parametrize("segundos,esperado", [(12.34, "12,3 s"), (0, "0,0 s"), (2, "2,0 s"), (None, "No disponible"), (-1, "No disponible"), (True, "No disponible"), ("x", "No disponible")])
+    def test_duracion(self, segundos, esperado):
+        assert formato.texto_duracion(segundos) == esperado
+
+    def test_chip_completado_en_el_titulo_del_contenido(self):
+        html = componentes.titulo_contenido({"metadatos": {"formato_salida": "Flashcards", "perfil_destinatario": "Principiante"}})
+        assert '<span class="nm-chip-ok">Completado</span>' in html
+
+    def test_estilo_del_chip_y_del_slider(self):
+        from frontend.estilos import CSS
+
+        chip = CSS.split(".nm-chip-ok {")[1].split("}")[0]
+        assert "#F4F4C6" in chip and "#3F3F00" in chip
+        assert 'st-key-nm-card"] [data-testid="stSlider"]' in CSS or '[data-testid="stSlider"]' in CSS
+
+
+@pytest.fixture
+def at_con_resultado(monkeypatch):
+    """AppTest con el cliente mockeado y una solicitud completa; `llamadas` cuenta cuántas veces se llamó a la API."""
+    from streamlit.testing.v1 import AppTest, element_tree
+
+    # AppTest 1.40 no sabe reponer el estado de un st.segmented_control de selección simple (busca un str entre protobufs).
+    def indices(self):
+        valor = self.value
+        valores = [] if valor is None else valor if isinstance(valor, list) else [valor]
+        contenidos = [o.content for o in self.options]
+        return [contenidos.index(v) for v in valores]
+
+    monkeypatch.setattr(element_tree.ButtonGroup, "indices", property(indices))
+
+    llamadas = []
+
+    def falsa(base_url, perfil, formato_salida, **kwargs):
+        llamadas.append(perfil)
+        return EXITO | {"metadatos": EXITO["metadatos"] | {"fecha_generacion": "2026-10-24T15:30:00Z", "fragmentos_usados": 3}}
+
+    monkeypatch.setattr(cliente_api, "adaptar", falsa)
+    at = AppTest.from_file("frontend/app.py", default_timeout=30).run()
+    at.radio[0].set_value("Pegar texto").run()
+    at.text_area[0].set_value("Una VCN es una red privada.").run()
+    at.button(key="usar_ejemplo")  # el botón existe
+    generar = [b for b in at.button if b.label == "Generar contenido"][0]
+    generar.click().run()
+    assert not at.exception and len(llamadas) == 1
+    return at, llamadas
+
+
+def _markdown(at):
+    return " ".join(m.value for m in at.markdown)
+
+
+def test_el_boton_de_ejemplo_completa_texto_y_titulo(app_sin_api):
     at = app_sin_api.run()
+    assert at.radio[0].value == "Subir archivo"  # desde el modo archivo también funciona: cambia a "Pegar texto"
+    at.button(key="usar_ejemplo").click().run()
     assert not at.exception
-    assert mensaje in _textos(at)
-    assert "Reintentar" not in [b.label for b in at.button]
+    assert at.radio[0].value == "Pegar texto"
+    assert at.text_area[0].value == ejemplos.TEXTO_EJEMPLO
+    assert at.text_input[0].value == ejemplos.TITULO_EJEMPLO
+    assert "caracteres" in _markdown(at)
 
 
-@pytest.mark.parametrize(
-    "tipo, status", [(cliente_api.SERVIDOR, 503), (cliente_api.SERVIDOR, 502), (cliente_api.CONEXION, None), (cliente_api.TIMEOUT, None)]
-)
-def test_los_errores_de_servicio_y_conexion_si_ofrecen_reintentar(app_sin_api, tipo, status):
-    app_sin_api.session_state["fase"] = "fallo"
-    app_sin_api.session_state["error"] = ErrorDeApi("No disponible", tipo, status)
-    assert "Reintentar" in [b.label for b in app_sin_api.run().button]
+def test_resultado_con_slider_nota_tiempo_y_chip(at_con_resultado):
+    at, _ = at_con_resultado
+    assert at.slider[0].label == "¿Qué tan exigente querés ser al revisar?"
+    assert (at.slider[0].min, at.slider[0].max, at.slider[0].step, at.slider[0].value) == (0.5, 0.95, 0.01, 0.72)
+    assert "¿Por qué esta nota?" in [e.label for e in at.expander]
+    texto = _markdown(at)
+    assert "El umbral oficial es 0.72" in " ".join(c.value for c in at.caption)
+    assert "Completado" in texto and "Tiempo de generación:" in texto and "Supera el umbral mínimo (0.72)" in texto
+    assert "se compararon 1 unidad contra 3 fragmentos" in texto
 
 
-def test_solo_los_4xx_no_son_reintentables():
-    def error(status):
-        return httpx.Response(status, json={"status": "error", "codigo": "x", "mensaje": "m"})
+def test_mover_el_slider_no_vuelve_a_llamar_a_la_api_ni_borra_el_resultado(at_con_resultado):
+    at, llamadas = at_con_resultado
+    at.slider[0].set_value(0.90).run()
+    assert not at.exception
+    assert len(llamadas) == 1
+    texto = _markdown(at)
+    assert "Con tu umbral (0.90): queda por debajo" in texto and "Tu umbral 0.90" in texto
+    assert "Confianza normal" in texto  # la píldora oficial no depende del slider
+    assert "¿Qué es una VCN?" in texto  # el resultado sigue ahí
+    assert at.session_state["resultado"] is not None
 
-    assert not cliente_api._error_http(error(422)).reintentable
-    assert not cliente_api._error_http(error(413)).reintentable
-    assert all(cliente_api._error_http(error(s)).reintentable for s in (500, 502, 503, 504))
+
+def test_volver_al_umbral_oficial(at_con_resultado):
+    at, llamadas = at_con_resultado
+    assert at.button(key="umbral_oficial").disabled
+    at.slider[0].set_value(0.60).run()
+    assert not at.button(key="umbral_oficial").disabled
+    at.button(key="umbral_oficial").click().run()
+    assert not at.exception and not at.warning
+    assert at.slider[0].value == 0.72 and len(llamadas) == 1
+    assert "Supera el umbral mínimo (0.72)" in _markdown(at)
+
+
+def test_sin_umbral_no_hay_slider(app_sin_api):
+    sin_umbral = EXITO | {"evaluacion_calidad": {"anclaje_fuente_score": 0.8, "baja_confianza": False, "umbral": None}}
+    at = _con_resultado(app_sin_api, sin_umbral)
+    assert not at.exception and len(at.slider) == 0
+
+
+def test_las_descargas_segun_el_formato(app_sin_api):
+    at = _con_resultado(app_sin_api, EXITO)
+    etiquetas = [b.proto.label for b in at.get("download_button")]
+    assert etiquetas == ["Descargar CSV (compatible con Anki)", "Descargar JSON"]
+
+
+def test_la_guia_ofrece_markdown(app_sin_api):
+    at = _con_resultado(app_sin_api, GUIA)
+    assert [b.proto.label for b in at.get("download_button")] == ["Descargar Markdown", "Descargar JSON"]

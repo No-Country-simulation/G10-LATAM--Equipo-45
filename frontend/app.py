@@ -7,6 +7,7 @@ Lógica testeable: frontend/cliente_api.py y frontend/formato.py. HTML: frontend
 """
 
 import sys
+import time
 from pathlib import Path
 
 # `streamlit run` pone frontend/ en el path, no la raíz del repo: se agrega para importar `frontend.*`.
@@ -14,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st  # noqa: E402
 
-from frontend import cliente_api, componentes, formato  # noqa: E402
+from frontend import cliente_api, componentes, ejemplos, formato  # noqa: E402
 from frontend.config import cargar_config  # noqa: E402
 from frontend.estilos import inyectar_estilos  # noqa: E402
 
@@ -28,6 +29,7 @@ ss.setdefault("fase", OCIOSO)
 ss.setdefault("resultado", None)
 ss.setdefault("error", None)
 ss.setdefault("problemas", [])
+ss.setdefault("duracion_s", None)
 
 inyectar_estilos()
 
@@ -38,6 +40,21 @@ def _entrada_actual() -> dict:
         return {"texto": ss.get("texto_documento", ""), "archivo": None}
     subido = ss.get("archivo_subido")
     return {"texto": None, "archivo": (subido.name, subido.getvalue()) if subido else None}
+
+
+def _usar_ejemplo() -> None:
+    """
+    Carga el texto de ejemplo y pasa al modo "Pegar texto". Es un on_click: corre ANTES de que se creen los widgets en
+    el próximo rerun, que es cuando Streamlit permite escribir en el estado de un widget con key.
+    """
+    ss.modo = "Pegar texto"
+    ss.texto_documento = ejemplos.TEXTO_EJEMPLO
+    ss.titulo_documento = ejemplos.TITULO_EJEMPLO
+    ss.problemas = []
+
+
+def _volver_al_umbral_oficial() -> None:
+    ss.umbral_usuario = formato.umbral_para_slider((ss.resultado or {}).get("evaluacion_calidad", {}).get("umbral"))
 
 
 def _lanzar() -> None:
@@ -60,6 +77,7 @@ def _generar() -> None:
     entrada = _entrada_actual()
     try:
         with st.spinner("Generando contenido... puede tardar hasta un par de minutos"):
+            inicio = time.perf_counter()
             ss.resultado = cliente_api.adaptar(
                 config.api_base_url,
                 formato.PERFILES[ss.perfil],
@@ -69,6 +87,8 @@ def _generar() -> None:
                 titulo=(ss.get("titulo_documento") or "").strip() or None,
                 timeout_s=config.api_timeout_s,
             )
+            ss.duracion_s = time.perf_counter() - inicio
+        ss.pop("umbral_usuario", None)  # el slider arranca en el umbral oficial del resultado nuevo
         ss.fase = LISTO
     except cliente_api.ErrorDeApi as e:
         ss.error, ss.fase = e, FALLO
@@ -102,20 +122,90 @@ def _mostrar_contenido(contenido) -> None:
                 st.write(respuesta)
 
 
-def _mostrar_metadatos(meta: dict, oci: dict) -> None:
+def _mostrar_metadatos(meta: dict, oci: dict, duracion_s) -> None:
     with st.expander("Detalles de la generación"):
         st.markdown(
             f"- **Modelo:** {meta.get('modelo', 'No disponible')}\n"
             f"- **Fragmentos usados:** {meta.get('fragmentos_usados', 'No disponible')}\n"
             f"- **Fecha:** {formato.texto_fecha(meta.get('fecha_generacion'), config.app_timezone)}\n"
+            f"- **Tiempo de generación:** {formato.texto_duracion(duracion_s)}\n"
             f"- **Documento original:** {formato.texto_almacenamiento(oci.get('documento_original'))}\n"
             f"- **Resultado JSON:** {formato.texto_almacenamiento(oci.get('salida_json'))}"
         )
 
 
-def _mostrar_resultado(respuesta: dict) -> None:
+def _mostrar_score(respuesta: dict) -> None:
+    calidad = respuesta.get("evaluacion_calidad") or {}
+    meta = respuesta.get("metadatos") or {}
+    oficial = formato.umbral_para_slider(calidad.get("umbral"))
+    con_slider = oficial is not None and formato.porcentaje_barra(calidad.get("anclaje_fuente_score")) is not None
+    if con_slider:
+        # Se siembra el estado y el slider se crea SIN `value`: pasar un valor y además escribir la key por la API
+        # de session_state (como hace "Volver al umbral oficial") hace que Streamlit muestre una advertencia.
+        ss.setdefault("umbral_usuario", oficial)
+    umbral_usuario = ss.get("umbral_usuario") if con_slider else None
+
     with st.container(key="nm-card-score"):
-        st.markdown(componentes.tarjeta_score(respuesta.get("evaluacion_calidad") or {}), unsafe_allow_html=True)
+        st.markdown(componentes.tarjeta_score(calidad, umbral_usuario), unsafe_allow_html=True)
+        if con_slider:
+            st.slider(
+                "¿Qué tan exigente querés ser al revisar?",
+                min_value=formato.SLIDER_MIN,
+                max_value=formato.SLIDER_MAX,
+                step=formato.SLIDER_PASO,
+                key="umbral_usuario",
+            )
+            st.caption(
+                "Solo cambia cómo leés este resultado: no vuelve a generar, no cambia el contenido y no modifica lo que "
+                f"guarda el sistema. El umbral oficial es {formato.texto_umbral(calidad.get('umbral'))}."
+            )
+            st.button(
+                "Volver al umbral oficial",
+                key="umbral_oficial",
+                on_click=_volver_al_umbral_oficial,
+                disabled=abs(ss.umbral_usuario - oficial) < 0.005,
+            )
+        with st.expander("¿Por qué esta nota?"):
+            unidades = formato.unidades_de(respuesta.get("contenido_adaptado"))
+            for parrafo in formato.explicacion_nota(calidad, unidades, meta.get("fragmentos_usados")):
+                st.markdown(parrafo)
+
+
+def _botones_de_descarga(respuesta: dict) -> None:
+    """Descarga propia del formato (CSV para Anki o Markdown) y, siempre, el JSON crudo."""
+    contenido = respuesta.get("contenido_adaptado")
+    titulo = (respuesta.get("metadatos") or {}).get("documento_titulo")
+    col_formato, col_json = st.columns([3, 2])
+    if formato.es_guia(contenido):
+        col_formato.download_button(
+            "Descargar Markdown",
+            data=formato.markdown_guia(titulo, formato.items_guia(contenido)),
+            file_name=formato.nombre_descarga(respuesta, "md"),
+            mime="text/markdown",
+            key="descarga_md",
+            use_container_width=True,
+        )
+    else:
+        col_formato.download_button(
+            "Descargar CSV (compatible con Anki)",
+            data=formato.csv_flashcards(formato.items_flashcards(contenido)),
+            file_name=formato.nombre_descarga(respuesta, "csv"),
+            mime="text/csv",
+            key="descarga_csv",
+            use_container_width=True,
+        )
+    col_json.download_button(
+        "Descargar JSON",
+        data=formato.json_formateado(respuesta),
+        file_name=formato.nombre_descarga(respuesta),
+        mime="application/json",
+        key="descarga_json",
+        use_container_width=True,
+    )
+
+
+def _mostrar_resultado(respuesta: dict) -> None:
+    _mostrar_score(respuesta)
     with st.container(key="nm-card-contenido"):
         col_titulo, col_vista = st.columns([3, 2])
         col_titulo.markdown(componentes.titulo_contenido(respuesta), unsafe_allow_html=True)
@@ -129,10 +219,14 @@ def _mostrar_resultado(respuesta: dict) -> None:
                 data=formato.json_formateado(respuesta),
                 file_name=formato.nombre_descarga(respuesta),
                 mime="application/json",
+                key="descarga_json_vista",
             )
         else:
+            _botones_de_descarga(respuesta)
             _mostrar_contenido(respuesta.get("contenido_adaptado"))
-    _mostrar_metadatos(respuesta.get("metadatos") or {}, respuesta.get("almacenamiento_oci") or {})
+    _mostrar_metadatos(
+        respuesta.get("metadatos") or {}, respuesta.get("almacenamiento_oci") or {}, ss.get("duracion_s")
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -148,6 +242,7 @@ with col_entrada:
     with st.container(key="nm-card-fuente"):
         st.markdown(componentes.titulo_tarjeta("1 · Material fuente"), unsafe_allow_html=True)
         st.radio("¿Cómo querés cargarlo?", ["Subir archivo", "Pegar texto"], key="modo", horizontal=True, disabled=ocupado)
+        st.button("Usar texto de ejemplo", key="usar_ejemplo", on_click=_usar_ejemplo, disabled=ocupado)
         if ss.modo == "Pegar texto":
             st.text_area("Texto del documento", key="texto_documento", height=250, disabled=ocupado)
             st.markdown(componentes.contador(len(ss.get("texto_documento", ""))), unsafe_allow_html=True)
