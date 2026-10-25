@@ -603,6 +603,22 @@ def test_la_app_muestra_el_error_sin_romper(app_sin_api):
     assert [b.label for b in at.button] == ["Usar texto de ejemplo", "Generar contenido", "Reintentar"]
 
 
+@pytest.mark.parametrize(
+    "mensaje, status",
+    [
+        ("El documento no tiene contenido útil para adaptar.", 422),
+        ("El documento supera el tamaño máximo permitido (10 MB).", 413),
+    ],
+)
+def test_un_error_de_validacion_muestra_el_mensaje_sin_boton_reintentar(app_sin_api, mensaje, status):
+    app_sin_api.session_state["fase"] = "fallo"
+    app_sin_api.session_state["error"] = ErrorDeApi(mensaje, cliente_api.VALIDACION, status)
+    at = app_sin_api.run()
+    assert not at.exception
+    assert mensaje in _textos(at)
+    assert [b.label for b in at.button] == ["Usar texto de ejemplo", "Generar contenido"]
+
+
 # --------------------------------------------------------------------------------------
 # Usabilidad: ejemplo, nota, slider, descargas, tiempo
 # --------------------------------------------------------------------------------------
